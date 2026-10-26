@@ -112,7 +112,8 @@ button.marker:active { transform: translateX(-50%) scale(0.94); }
   display: flex; align-items: center; gap: 10px; min-height: 52px;
   margin: 0 -4px; padding: 0 4px; background: var(--paper);
 }
-.journal-head h2 { font-family: var(--serif); font-weight: 700; font-size: 16px; margin: 0; }
+.journal-head h2 { font-family: var(--serif); font-weight: 700; font-size: 16px; margin: 0; white-space: nowrap; }
+.journal-msg { flex: none; margin: 2px 0 4px; font-size: 13px; font-weight: 700; line-height: 1.45; color: #b0412e; text-wrap: pretty; }
 .save-state { font-size: 12px; font-weight: 700; color: var(--mute); opacity: 0; transition: opacity 0.3s; }
 .save-state.show { opacity: 1; }
 .save-state.warn { color: #b0412e; opacity: 1; }
@@ -364,7 +365,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
       <button class="save-btn wide-btn" id="resetBtn" type="submit">Save new password</button>
       <p class="form-msg" id="resetMsg" aria-live="polite"></p>
     </form>
-    <p class="version" id="versionTag">Version 2026-10-26x</p>
+    <p class="version" id="versionTag">Version 2026-10-26ab</p>
   </div>
 </section>
 
@@ -408,6 +409,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
       <button class="save-btn" id="saveBtn">Save</button>
       <input type="file" id="fileInput" accept="image/*" multiple hidden>
     </div>
+    <p class="journal-msg" id="journalMsg" role="alert" hidden></p>
     <div class="journal-scroll" id="journalScroll">
       <div class="compose" id="compose" hidden>
         <button type="button" id="writeBtn"><span class="ring"><svg><use href="#i-type"></use></svg></span>Write</button>
@@ -949,13 +951,22 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     entry.style.height = Math.max(84, entry.scrollHeight) + "px";
   }
 
+  // Short status ("Saved") sits beside the title; problems get their own line under it.
   function showSaved(text, warn) {
-    saveState.textContent = text;
-    saveState.classList.toggle("warn", !!warn);
-    saveState.classList.add("show");
     clearTimeout(savedTimer);
-    if (!warn) savedTimer = setTimeout(() => saveState.classList.remove("show"), 1800);
+    if (warn) {
+      $("journalMsg").textContent = text;
+      $("journalMsg").hidden = false;
+      saveState.classList.remove("show", "warn");
+      return;
+    }
+    $("journalMsg").hidden = true;
+    saveState.textContent = text;
+    saveState.classList.remove("warn");
+    saveState.classList.add("show");
+    savedTimer = setTimeout(() => saveState.classList.remove("show"), 1800);
   }
+  const clearMsg = () => { $("journalMsg").hidden = true; };
 
   let saving = Promise.resolve();
   function saveNow(announce) {
@@ -969,7 +980,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
         else await Store.put({ date: k, text, photos, moon: moonSnapshot(k), updatedAt: new Date().toISOString() });
         if (Draft.get(k) && Draft.get(k).text === text) Draft.clear(k);
         if (announce) showSaved("Saved");
-        else if (saveState.classList.contains("warn")) saveState.classList.remove("show", "warn");
+        else if (!$("journalMsg").hidden && /save/i.test($("journalMsg").textContent)) clearMsg();
       } catch (e) {
         showSaved("Couldn't save. Check your connection and tap Save again.", true);
       }
@@ -1034,6 +1045,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     state.date = k;
     state.scrub = null;
     saveState.classList.remove("show");
+    clearMsg();
     renderDay();
     await loadEntry();
     $("journalScroll").scrollTop = 0;
@@ -1083,109 +1095,93 @@ body.modal-open::before { background: var(--scrim-on-paper); }
   $("dictateBtn").addEventListener("click", () => startDictation());
 
   // ---------- Dictation ----------
-  // The iPhone's own speech recognition turns speech into text as you talk. When you stop,
-  // Claude (through the clean-dictation function) removes filler words and applies your
-  // spoken corrections without rewording anything.
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const rec = { on: false, stopping: false, finals: "", sessionFinal: "", interim: "", level: 0, raf: 0, lastLen: 0, phase: 0 };
-  function recText() { return [rec.finals, rec.sessionFinal, rec.interim].join(" ").replace(/\s+/g, " ").trim(); }
+  // The app records your voice itself (so it works every time, even from the Home Screen).
+  // When you stop, the clean-dictation function has OpenAI transcribe the audio and Claude
+  // remove filler words and apply spoken corrections, without rewording anything.
+  const rec = { on: false, stream: null, recorder: null, chunks: [], ctx: null, analyser: null, buf: null, raf: 0, started: 0, level: 0.06, cancelled: false };
   function setRecUI(on) {
     document.body.classList.toggle("recording", on);
     $("recorder").hidden = !on;
     $("recBar").hidden = !on;
     updateCompose();
   }
-  // iPhone only listens reliably with one recognizer for the life of the page: it's reused for every
-  // dictation and restarted after pauses, and a new start always waits for the previous one to end.
-  let recog = null, listening = false, sessionBase = null;
-  const endWaiters = [];
-  function whenEnded(ms) {
-    if (!listening) return Promise.resolve();
-    return new Promise((resolve) => { endWaiters.push(resolve); setTimeout(resolve, ms); });
+  const fmtClock = (ms) => { const t = Math.floor(ms / 1000); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`; };
+  function pickType() {
+    const types = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"];
+    return (window.MediaRecorder && MediaRecorder.isTypeSupported) ? types.find((t) => MediaRecorder.isTypeSupported(t)) || "" : "";
   }
-  function recognizer() {
-    if (recog) return recog;
-    recog = new SR();
-    recog.lang = navigator.language || "en-US";
-    recog.continuous = true;
-    recog.interimResults = true;
-    recog.onstart = () => { listening = true; };
-    recog.onresult = (ev) => {
-      if (!rec.on) return;
-      // Only count results from this session (iPhone can repeat earlier ones after a restart).
-      if (sessionBase === null) sessionBase = ev.resultIndex;
-      let fin = "", inter = "";
-      for (let i = sessionBase; i < ev.results.length; i++) {
-        const t = ev.results[i][0].transcript;
-        if (ev.results[i].isFinal) fin += t + " "; else inter += t + " ";
-      }
-      rec.sessionFinal = fin.trim(); rec.interim = inter.trim();
-      const text = recText();
-      if (text.length !== rec.lastLen) { rec.level = Math.min(1, rec.level + 0.55); rec.lastLen = text.length; }
-      $("recLive").textContent = text;
-    };
-    recog.onspeechstart = () => { if (rec.on) rec.level = Math.max(rec.level, 0.5); };
-    recog.onerror = (ev) => {
-      if (!rec.on) return;
-      if (ev.error === "not-allowed" || ev.error === "service-not-allowed" || ev.error === "audio-capture") {
-        cancelDictation();
-        showSaved(ev.error === "audio-capture" ? "Couldn't use the microphone." : "Dictation isn't allowed. Turn on Dictation in Settings and allow the microphone for Moon Journal.", true);
-      }
-    };
-    recog.onend = () => {
-      listening = false;
-      if (rec.on) {
-        // Keep words that hadn't been marked final yet; iPhone often ends a session without finalizing them.
-        rec.finals = [rec.finals, rec.sessionFinal, rec.interim].join(" ").replace(/\s+/g, " ").trim();
-        rec.sessionFinal = ""; rec.interim = "";
-        if (!rec.stopping) listen();      // it stopped after a pause; keep listening until you tap Stop
-      }
-      endWaiters.splice(0).forEach((f) => f());
-    };
-    return recog;
-  }
-  function listen() {
-    sessionBase = null;
-    try { recognizer().start(); } catch (e) { /* already listening */ }
-  }
+  // The line follows your voice: the microphone's sound wave, drawn as one black line.
   function drawWave() {
     const c = $("waveCanvas"), dpr = window.devicePixelRatio || 1;
     const w = c.clientWidth, h = c.clientHeight;
-    if (c.width !== w * dpr) { c.width = w * dpr; c.height = h * dpr; }
+    if (c.width !== Math.round(w * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
     const g = c.getContext("2d");
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, w, h);
-    rec.level = Math.max(0.06, rec.level * 0.94);
-    rec.phase += 0.12 + rec.level * 0.2;
     g.beginPath();
-    for (let x = 0; x <= w; x += 2) {
-      const t = x / w, env = Math.sin(Math.PI * t);                // quiet at the ends, loudest in the middle
-      const y = h / 2 + env * (h * 0.42) * rec.level *
-        (0.6 * Math.sin(t * 14 + rec.phase) + 0.3 * Math.sin(t * 31 - rec.phase * 1.7) + 0.1 * Math.sin(t * 53 + rec.phase * 2.3));
-      x ? g.lineTo(x, y) : g.moveTo(x, y);
+    if (rec.analyser && rec.on) {
+      rec.analyser.getByteTimeDomainData(rec.buf);
+      const n = rec.buf.length;
+      for (let x = 0; x <= w; x += 2) {
+        const t = x / w, env = Math.sin(Math.PI * t);               // calm at the ends
+        const v = (rec.buf[Math.min(n - 1, Math.floor(t * n))] - 128) / 128;
+        const y = h / 2 + Math.max(-1, Math.min(1, v * 3)) * env * (h * 0.45);
+        x ? g.lineTo(x, y) : g.moveTo(x, y);
+      }
+      $("recStatus").textContent = `Listening… ${fmtClock(Date.now() - rec.started)}`;
+    } else {
+      g.moveTo(0, h / 2); g.lineTo(w, h / 2);
     }
     g.strokeStyle = "#1a1a1a"; g.lineWidth = 3; g.lineJoin = "round"; g.lineCap = "round";
     g.stroke();
-    if (rec.on || rec.flatten) rec.raf = requestAnimationFrame(drawWave);
+    if (rec.on) rec.raf = requestAnimationFrame(drawWave);
+  }
+  function releaseMic() {
+    try { rec.stream && rec.stream.getTracks().forEach((t) => t.stop()); } catch (e) {}
+    try { rec.ctx && rec.ctx.close(); } catch (e) {}
+    rec.stream = null; rec.ctx = null; rec.analyser = null;
   }
   async function startDictation() {
-    if (!SR) { showSaved("Dictation isn't available in this browser. On iPhone, turn on Dictation in Settings, General, Keyboard.", true); return; }
-    Object.assign(rec, { on: true, stopping: false, finals: "", sessionFinal: "", interim: "", level: 0.3, lastLen: 0 });
+    if (!navigator.mediaDevices || !window.MediaRecorder) { showSaved("This browser can't record audio.", true); return; }
+    clearMsg();
     $("recLive").textContent = "";
-    $("recStatus").textContent = "Listening…";
+    $("recStatus").textContent = "Starting the microphone…";
     $("recStop").disabled = false; $("recStopLabel").textContent = "Stop recording";
+    rec.on = true; rec.cancelled = false; rec.chunks = [];
     setRecUI(true);
+    try {
+      rec.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    } catch (e) {
+      rec.on = false; setRecUI(false);
+      showSaved(e && e.name === "NotAllowedError" ? "Microphone access is off. Allow it in Settings, Moon Journal, then try again." : "Couldn't use the microphone.", true);
+      return;
+    }
+    if (!rec.on) { releaseMic(); return; }      // cancelled while the mic was starting
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      rec.ctx = new AC();
+      const src = rec.ctx.createMediaStreamSource(rec.stream);
+      rec.analyser = rec.ctx.createAnalyser();
+      rec.analyser.fftSize = 1024;
+      rec.buf = new Uint8Array(rec.analyser.fftSize);
+      src.connect(rec.analyser);
+      if (rec.ctx.state === "suspended") rec.ctx.resume();
+    } catch (e) { /* recording still works without the live line */ }
+    const type = pickType();
+    rec.recorder = new MediaRecorder(rec.stream, type ? { mimeType: type } : undefined);
+    rec.recorder.ondataavailable = (ev) => { if (ev.data && ev.data.size) rec.chunks.push(ev.data); };
+    rec.recorder.start(1000);
+    rec.started = Date.now();
     cancelAnimationFrame(rec.raf); rec.raf = requestAnimationFrame(drawWave);
-    if (listening) { try { recog.stop(); } catch (e) {} await whenEnded(1500); }   // let a previous session finish first
-    if (rec.on) listen();
   }
   function cancelDictation() {
-    rec.on = false; rec.stopping = false;
-    try { if (listening) recog.stop(); } catch (e) {}
+    rec.cancelled = true; rec.on = false;
+    try { rec.recorder && rec.recorder.state !== "inactive" && rec.recorder.stop(); } catch (e) {}
+    releaseMic();
     cancelAnimationFrame(rec.raf);
     setRecUI(false);
   }
-  // Strip the obvious fillers locally, in case the cleanup service can't be reached.
+  // Strip the obvious fillers locally, if Claude cleanup isn't set up.
   function basicClean(t) {
     let s = " " + t + " ";
     s = s.replace(/[\s,]+\b(um+|uh+|uhm+|erm+|er|ah+|hmm+)\b[,.]?/gi, " ");
@@ -1193,27 +1189,37 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     return s ? s[0].toUpperCase() + s.slice(1) : s;
   }
   async function finishDictation() {
-    if (!rec.on) return;
-    rec.stopping = true;
-    $("recStop").disabled = true; $("recStopLabel").textContent = "Cleaning up…";
-    $("recStatus").textContent = "Cleaning up your words…";
-    // Stop listening and wait for the last words to come in.
-    try { if (listening) recog.stop(); } catch (e) {}
-    await whenEnded(2500);
-    rec.finals = [rec.finals, rec.sessionFinal, rec.interim].join(" ").trim(); rec.sessionFinal = ""; rec.interim = "";
-    rec.on = false; rec.stopping = false; rec.flatten = true;
-    const raw = rec.finals.replace(/\s+/g, " ").trim();
-    let text = basicClean(raw);
-    if (raw) {
-      try {
-        const { data, error } = await sb.functions.invoke("clean-dictation", { body: { text: raw } });
-        if (!error && data && typeof data.text === "string" && data.cleaned) text = data.text.trim();
-      } catch (e) { /* keep the basic cleanup */ }
+    if (!rec.on || !rec.recorder) return;
+    $("recStop").disabled = true; $("recStopLabel").textContent = "Transcribing…";
+    $("recStatus").textContent = "Turning your recording into text…";
+    const recorder = rec.recorder;
+    const stopped = new Promise((resolve) => { recorder.onstop = resolve; setTimeout(resolve, 3000); });
+    try { recorder.state !== "inactive" && recorder.stop(); } catch (e) {}
+    await stopped;
+    rec.on = false;
+    releaseMic();
+    cancelAnimationFrame(rec.raf); drawWave();
+    if (rec.cancelled) return;
+    const type = recorder.mimeType || (rec.chunks[0] && rec.chunks[0].type) || "audio/mp4";
+    const blob = new Blob(rec.chunks, { type });
+    rec.chunks = [];
+    if (blob.size < 2000) { setRecUI(false); showSaved("Didn't catch anything. Try again.", true); return; }
+    const ext = /webm/.test(type) ? "webm" : /ogg/.test(type) ? "ogg" : "mp4";
+    let text = "", problem = "";
+    try {
+      const form = new FormData();
+      form.append("audio", blob, `dictation.${ext}`);
+      const { data, error } = await sb.functions.invoke("clean-dictation", { body: form });
+      if (error) throw error;
+      if (data && data.error) problem = data.error;
+      else text = data.cleaned ? (data.text || "") : basicClean(data.text || "");
+    } catch (e) {
+      problem = "Couldn't reach the transcription service. Check your connection and try again.";
     }
-    rec.flatten = false;
-    cancelAnimationFrame(rec.raf);
     setRecUI(false);
-    if (!text) { showSaved("Didn't catch anything. Try again.", true); updateCompose(); return; }
+    text = text.trim();
+    if (problem) { showSaved(problem, true); return; }
+    if (!text) { showSaved("Didn't catch anything. Try again.", true); return; }
     entry.value = entry.value.trim() ? entry.value.trim() + "\n\n" + text : text;
     state.entry.text = entry.value;
     Draft.set(state.date, entry.value);
@@ -1224,6 +1230,8 @@ body.modal-open::before { background: var(--scrim-on-paper); }
   }
   $("recStop").addEventListener("click", finishDictation);
   $("recCancel").addEventListener("click", () => { cancelDictation(); updateCompose(); });
+  // Leaving the app mid-recording cancels it, so the microphone isn't left on.
+  document.addEventListener("visibilitychange", () => { if (document.hidden && rec.on && !$("recStop").disabled) { cancelDictation(); updateCompose(); } });
   ["click", "keyup"].forEach((ev) => entry.addEventListener(ev, keepCaretVisible));
 
   // Keep the line being typed above the keyboard.
@@ -1757,13 +1765,23 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     try {
       const perm = await Notification.requestPermission();
       if (perm !== "granted") { remNote("Notifications weren't allowed. You can turn them on in Settings, Notifications, Moon Journal."); return; }
+      let step = "subscribe";
       const reg = swReg || (await navigator.serviceWorker.ready);
       const sub = (await reg.pushManager.getSubscription()) ||
         (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(CFG.vapidPublicKey) }));
-      await saveSub(sub, remPrefs());
+      step = "save";
+      try { await saveSub(sub, remPrefs()); }
+      catch (err) { err.step = step; throw err; }
       await renderReminders();
     } catch (e) {
-      remNote("Couldn't turn on reminders. Check your connection and try again.");
+      const m = (e && (e.message || e.code)) || "unknown error";
+      console.error("Reminders:", e);
+      if (e && e.step === "save" && /push_subscriptions|relation|schema cache|42P01|PGRST/i.test(m + " " + (e.code || "")))
+        remNote("This phone is ready, but Supabase is missing the reminders table. Run supabase/reminders.sql in the Supabase SQL Editor, then tap Turn on reminders again.");
+      else if (e && e.step === "save")
+        remNote("This phone is ready, but saving it to Supabase failed: " + m);
+      else
+        remNote("The phone couldn't sign up for notifications: " + m);
     } finally { $("remOn").disabled = false; }
   });
   $("remOff").addEventListener("click", async () => {
@@ -1813,7 +1831,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     $("resetForm").hidden = !recover;
     $("loginSub").textContent = recover ? "Choose a new password for your journal." : "Sign in to see tonight's moon and your journal.";
     const now = new Date();
-    if (sb) $("versionTag").textContent = `Version 2026-10-26x · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
+    if (sb) $("versionTag").textContent = `Version 2026-10-26ab · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
     $("loginMoon").innerHTML = phaseIcon(SunCalc.getMoonIllumination(now).phase, 112, 3, "hatch");
   }
   function enterApp(session) {

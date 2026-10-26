@@ -69,11 +69,11 @@ One-time setup:
 
 ## Dictation
 
-On a day with no entry, tap **Dictate**, talk, then **Stop recording**. The iPhone's own speech recognition turns your voice into text as you speak (Settings → General → Keyboard → Enable Dictation, and allow the microphone for Moon Journal). When you stop, the `clean-dictation` function asks Claude to remove filler words and apply spoken corrections ("scratch that", "new paragraph") without rewording anything, then the text drops into the entry for editing.
+On a day with no entry, tap **Dictate**, talk, then **Stop recording**. The app records your voice (the line follows the sound of it). When you stop, the `clean-dictation` function sends the recording to OpenAI, which transcribes it and then cleans it up: filler words out ("um", "uh", "like", "so"), spoken corrections applied ("scratch that", "new paragraph"), nothing reworded. The text drops into the entry for editing.
 
 One-time setup:
-1. Get a Claude API key at console.anthropic.com (pay-as-you-go; a dictated entry costs a fraction of a cent).
-2. **Edge Functions → Deploy a new function → Via Editor**: name it `clean-dictation`, paste `supabase/functions/clean-dictation/index.ts`, deploy. Leave **Verify JWT on** (only signed-in users can use it).
-3. **Edge Functions → Secrets**: add `ANTHROPIC_API_KEY` with your key.
+1. Create an OpenAI API key at platform.openai.com/api-keys and add a few dollars of credit (a minute of dictation costs well under a cent).
+2. **Edge Functions → Deploy a new function → Via Editor**: name it `clean-dictation`, paste `supabase/functions/clean-dictation/index.ts`, deploy. Leave **Verify JWT on** (only you, signed in, can use it).
+3. **Edge Functions → Secrets**: add `OPENAI_API_KEY` with your key.
 
-Without the key, dictation still works: the app removes "um"/"uh" itself and drops in the rest of the transcript as spoken.
+Optional secrets to change models: `TRANSCRIBE_MODEL` (default `gpt-4o-mini-transcribe`) and `CLEANUP_MODEL` (default `gpt-4.1-mini`).
