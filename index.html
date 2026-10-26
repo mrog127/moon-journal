@@ -175,6 +175,7 @@ body.writing .nav, body.recording .nav { display: none; }
 .rec-stop:active { transform: scale(0.96); }
 .rec-stop[disabled] { opacity: 0.6; }
 .today-btn { position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); height: 36px; }
+.nav .today-btn { background: var(--ink); color: var(--paper); }
 .nav .today-btn:active { transform: translateX(-50%) scale(0.94); }
 .round {
   height: 40px; min-width: 40px; border: var(--stroke) solid var(--ink); border-radius: var(--radius);
@@ -363,7 +364,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
       <button class="save-btn wide-btn" id="resetBtn" type="submit">Save new password</button>
       <p class="form-msg" id="resetMsg" aria-live="polite"></p>
     </form>
-    <p class="version" id="versionTag">Version 2026-10-26v</p>
+    <p class="version" id="versionTag">Version 2026-10-26w</p>
   </div>
 </section>
 
@@ -1791,7 +1792,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     $("resetForm").hidden = !recover;
     $("loginSub").textContent = recover ? "Choose a new password for your journal." : "Sign in to see tonight's moon and your journal.";
     const now = new Date();
-    if (sb) $("versionTag").textContent = `Version 2026-10-26v · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
+    if (sb) $("versionTag").textContent = `Version 2026-10-26w · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
     $("loginMoon").innerHTML = phaseIcon(SunCalc.getMoonIllumination(now).phase, 112, 3, "hatch");
   }
   function enterApp(session) {
