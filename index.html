@@ -364,7 +364,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
       <button class="save-btn wide-btn" id="resetBtn" type="submit">Save new password</button>
       <p class="form-msg" id="resetMsg" aria-live="polite"></p>
     </form>
-    <p class="version" id="versionTag">Version 2026-10-26w</p>
+    <p class="version" id="versionTag">Version 2026-10-26x</p>
   </div>
 </section>
 
@@ -1028,7 +1028,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
   }
 
   async function goTo(k) {
-    if (rec.on) stopDictation(true);
+    if (rec.on) cancelDictation();
     if (saveTimer) await saveNow();
     entry.blur();
     state.date = k;
@@ -1087,7 +1087,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
   // Claude (through the clean-dictation function) removes filler words and applies your
   // spoken corrections without rewording anything.
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const rec = { on: false, stopping: false, finals: "", sessionFinal: "", interim: "", recog: null, level: 0, raf: 0, lastLen: 0, phase: 0 };
+  const rec = { on: false, stopping: false, finals: "", sessionFinal: "", interim: "", level: 0, raf: 0, lastLen: 0, phase: 0 };
   function recText() { return [rec.finals, rec.sessionFinal, rec.interim].join(" ").replace(/\s+/g, " ").trim(); }
   function setRecUI(on) {
     document.body.classList.toggle("recording", on);
@@ -1095,38 +1095,58 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     $("recBar").hidden = !on;
     updateCompose();
   }
-  function newSession() {
-    const r = new SR();
-    r.lang = navigator.language || "en-US";
-    r.continuous = true;
-    r.interimResults = true;
-    r.onresult = (ev) => {
+  // iPhone only listens reliably with one recognizer for the life of the page: it's reused for every
+  // dictation and restarted after pauses, and a new start always waits for the previous one to end.
+  let recog = null, listening = false, sessionBase = null;
+  const endWaiters = [];
+  function whenEnded(ms) {
+    if (!listening) return Promise.resolve();
+    return new Promise((resolve) => { endWaiters.push(resolve); setTimeout(resolve, ms); });
+  }
+  function recognizer() {
+    if (recog) return recog;
+    recog = new SR();
+    recog.lang = navigator.language || "en-US";
+    recog.continuous = true;
+    recog.interimResults = true;
+    recog.onstart = () => { listening = true; };
+    recog.onresult = (ev) => {
+      if (!rec.on) return;
+      // Only count results from this session (iPhone can repeat earlier ones after a restart).
+      if (sessionBase === null) sessionBase = ev.resultIndex;
       let fin = "", inter = "";
-      for (let i = 0; i < ev.results.length; i++) {
+      for (let i = sessionBase; i < ev.results.length; i++) {
         const t = ev.results[i][0].transcript;
-        if (ev.results[i].isFinal) fin += t + " "; else inter += t;
+        if (ev.results[i].isFinal) fin += t + " "; else inter += t + " ";
       }
       rec.sessionFinal = fin.trim(); rec.interim = inter.trim();
       const text = recText();
       if (text.length !== rec.lastLen) { rec.level = Math.min(1, rec.level + 0.55); rec.lastLen = text.length; }
       $("recLive").textContent = text;
     };
-    r.onspeechstart = () => { rec.level = Math.max(rec.level, 0.5); };
-    r.onerror = (ev) => {
+    recog.onspeechstart = () => { if (rec.on) rec.level = Math.max(rec.level, 0.5); };
+    recog.onerror = (ev) => {
+      if (!rec.on) return;
       if (ev.error === "not-allowed" || ev.error === "service-not-allowed" || ev.error === "audio-capture") {
-        stopDictation(true);
-        showSaved(ev.error === "audio-capture" ? "Couldn't use the microphone." : "Dictation isn't allowed. Turn on Siri & Dictation and allow the microphone for Moon Journal.", true);
+        cancelDictation();
+        showSaved(ev.error === "audio-capture" ? "Couldn't use the microphone." : "Dictation isn't allowed. Turn on Dictation in Settings and allow the microphone for Moon Journal.", true);
       }
     };
-    r.onend = () => {
-      // iPhone ends a session after a pause; keep listening until you tap Stop.
-      // Keep words that hadn't been marked final yet; iPhone often ends a session without finalizing them.
-      rec.finals = [rec.finals, rec.sessionFinal, rec.interim].join(" ").replace(/\s+/g, " ").trim();
-      rec.sessionFinal = ""; rec.interim = "";
-      if (rec.on && !rec.stopping) { try { rec.recog = newSession(); rec.recog.start(); } catch (e) {} }
-      else if (rec.stopping && rec.done) rec.done();
+    recog.onend = () => {
+      listening = false;
+      if (rec.on) {
+        // Keep words that hadn't been marked final yet; iPhone often ends a session without finalizing them.
+        rec.finals = [rec.finals, rec.sessionFinal, rec.interim].join(" ").replace(/\s+/g, " ").trim();
+        rec.sessionFinal = ""; rec.interim = "";
+        if (!rec.stopping) listen();      // it stopped after a pause; keep listening until you tap Stop
+      }
+      endWaiters.splice(0).forEach((f) => f());
     };
-    return r;
+    return recog;
+  }
+  function listen() {
+    sessionBase = null;
+    try { recognizer().start(); } catch (e) { /* already listening */ }
   }
   function drawWave() {
     const c = $("waveCanvas"), dpr = window.devicePixelRatio || 1;
@@ -1148,23 +1168,22 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     g.stroke();
     if (rec.on || rec.flatten) rec.raf = requestAnimationFrame(drawWave);
   }
-  function startDictation() {
-    if (!SR) { showSaved("Dictation isn't available in this browser. On iPhone, turn on Siri & Dictation in Settings.", true); return; }
-    Object.assign(rec, { on: true, stopping: false, finals: "", sessionFinal: "", interim: "", level: 0.3, lastLen: 0, done: null });
+  async function startDictation() {
+    if (!SR) { showSaved("Dictation isn't available in this browser. On iPhone, turn on Dictation in Settings, General, Keyboard.", true); return; }
+    Object.assign(rec, { on: true, stopping: false, finals: "", sessionFinal: "", interim: "", level: 0.3, lastLen: 0 });
     $("recLive").textContent = "";
     $("recStatus").textContent = "Listening…";
     $("recStop").disabled = false; $("recStopLabel").textContent = "Stop recording";
     setRecUI(true);
-    try { rec.recog = newSession(); rec.recog.start(); }
-    catch (e) { stopDictation(true); showSaved("Couldn't start dictation. Try again.", true); return; }
     cancelAnimationFrame(rec.raf); rec.raf = requestAnimationFrame(drawWave);
+    if (listening) { try { recog.stop(); } catch (e) {} await whenEnded(1500); }   // let a previous session finish first
+    if (rec.on) listen();
   }
-  function stopDictation(discard) {
-    rec.on = false;
-    try { rec.recog && rec.recog.abort(); } catch (e) {}
+  function cancelDictation() {
+    rec.on = false; rec.stopping = false;
+    try { if (listening) recog.stop(); } catch (e) {}
     cancelAnimationFrame(rec.raf);
     setRecUI(false);
-    if (discard) return;
   }
   // Strip the obvious fillers locally, in case the cleanup service can't be reached.
   function basicClean(t) {
@@ -1178,10 +1197,11 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     rec.stopping = true;
     $("recStop").disabled = true; $("recStopLabel").textContent = "Cleaning up…";
     $("recStatus").textContent = "Cleaning up your words…";
-    // Wait for the last words to come in, then stop listening.
-    await new Promise((resolve) => { rec.done = resolve; try { rec.recog.stop(); } catch (e) { resolve(); } setTimeout(resolve, 2500); });
-    rec.on = false; rec.flatten = true;
+    // Stop listening and wait for the last words to come in.
+    try { if (listening) recog.stop(); } catch (e) {}
+    await whenEnded(2500);
     rec.finals = [rec.finals, rec.sessionFinal, rec.interim].join(" ").trim(); rec.sessionFinal = ""; rec.interim = "";
+    rec.on = false; rec.stopping = false; rec.flatten = true;
     const raw = rec.finals.replace(/\s+/g, " ").trim();
     let text = basicClean(raw);
     if (raw) {
@@ -1191,7 +1211,8 @@ body.modal-open::before { background: var(--scrim-on-paper); }
       } catch (e) { /* keep the basic cleanup */ }
     }
     rec.flatten = false;
-    stopDictation(true);
+    cancelAnimationFrame(rec.raf);
+    setRecUI(false);
     if (!text) { showSaved("Didn't catch anything. Try again.", true); updateCompose(); return; }
     entry.value = entry.value.trim() ? entry.value.trim() + "\n\n" + text : text;
     state.entry.text = entry.value;
@@ -1202,7 +1223,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     entry.focus();        // opens the keyboard where the phone allows it; otherwise tap the text to edit
   }
   $("recStop").addEventListener("click", finishDictation);
-  $("recCancel").addEventListener("click", () => { stopDictation(true); updateCompose(); });
+  $("recCancel").addEventListener("click", () => { cancelDictation(); updateCompose(); });
   ["click", "keyup"].forEach((ev) => entry.addEventListener(ev, keepCaretVisible));
 
   // Keep the line being typed above the keyboard.
@@ -1792,7 +1813,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     $("resetForm").hidden = !recover;
     $("loginSub").textContent = recover ? "Choose a new password for your journal." : "Sign in to see tonight's moon and your journal.";
     const now = new Date();
-    if (sb) $("versionTag").textContent = `Version 2026-10-26w · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
+    if (sb) $("versionTag").textContent = `Version 2026-10-26x · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
     $("loginMoon").innerHTML = phaseIcon(SunCalc.getMoonIllumination(now).phase, 112, 3, "hatch");
   }
   function enterApp(session) {
