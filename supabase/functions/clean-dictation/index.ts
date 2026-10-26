@@ -3,7 +3,7 @@
 // Needs the OPENAI_API_KEY secret. Optional secrets to change models:
 //   TRANSCRIBE_MODEL (default gpt-4o-mini-transcribe), CLEANUP_MODEL (default gpt-4.1-mini).
 
-const KEY = Deno.env.get("OPENAI_API_KEY");
+const KEY = Deno.env.get("OPENAI_API_KEY") || Deno.env.get("OpenAI");   // either secret name works
 const TRANSCRIBE_MODEL = Deno.env.get("TRANSCRIBE_MODEL") || "gpt-4o-mini-transcribe";
 const CLEANUP_MODEL = Deno.env.get("CLEANUP_MODEL") || "gpt-4.1-mini";
 
