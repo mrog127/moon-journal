@@ -14,7 +14,7 @@
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Merriweather:wght@700&family=Merriweather+Sans:ital,wght@0,300;0,700;1,300&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Merriweather:wght@700;900&family=Merriweather+Sans:ital,wght@0,300;0,700;0,800;1,300&display=swap">
 <style>
 body { margin: 0; font-size: 14px; }
 img { max-width: 100%; }
@@ -76,13 +76,19 @@ body.writing .top-area { display: none; }
 }
 .compass {
   position: absolute; z-index: 3;
-  top: -13px; right: 0;
-  width: 126px; height: 126px;
-  touch-action: none; cursor: grab;
+  /* 10% larger than the design (126 → 139), grown evenly around the same center */
+  top: -19px; right: -6px;
+  width: 139px; height: 139px;
+  touch-action: none; cursor: grab; user-select: none; -webkit-user-select: none;
+}
+.compass > svg { width: 100%; height: 100%; overflow: visible;   
 }
 .compass.dragging { cursor: grabbing; }
 #ring { transition: transform 0.25s linear; transform-origin: 63px 63px; }
 .compass.dragging #ring, .compass.live #ring { transition: none; }
+/* The moon marker turns the opposite way to the ring so it always stays upright. */
+#ringMoon .upright { transform-box: fill-box; transform-origin: center; transition: transform 0.25s linear; }
+.compass.dragging #ringMoon .upright, .compass.live #ringMoon .upright { transition: none; }
 
 /* Chart */
 .chart-wrap { position: relative; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: ew-resize; }
@@ -97,7 +103,6 @@ body.writing .top-area { display: none; }
 .marker.now { color: var(--now); z-index: 1; pointer-events: none; }
 button.marker { cursor: pointer; }
 button.marker:active { transform: translateX(-50%) scale(0.94); }
-.marker-moon, .marker-moon svg { display: block; width: 16px; height: 16px; }
 .marker small { font-size: 10px; font-weight: 300; letter-spacing: 0; margin-top: -3px; }
 
 /* Journal */
@@ -246,7 +251,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
 .account span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .account .link-btn { color: var(--ink); padding: 4px 0; flex: none; }
 .compass-hint {
-  position: absolute; z-index: 4; top: 116px; right: 13px; width: 100px; text-align: center;
+  position: absolute; z-index: 4; top: 122px; right: 13px; width: 100px; text-align: center;
   font-size: 10px; font-weight: 700; color: var(--mute); background: var(--paper); border-radius: 8px; padding: 2px 0;
 }
 
@@ -273,7 +278,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
 .rem-list.off .rem-row { opacity: 0.45; pointer-events: none; }
 .rem-actions { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 16px; }
 
-@media (prefers-reduced-motion: reduce) { #ring { transition: none; } }
+@media (prefers-reduced-motion: reduce) { #ring, #ringMoon .upright { transition: none; } }
 </style>
 </head>
 <body>
@@ -330,7 +335,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
       <button class="save-btn wide-btn" id="resetBtn" type="submit">Save new password</button>
       <p class="form-msg" id="resetMsg" aria-live="polite"></p>
     </form>
-    <p class="version" id="versionTag">Version 2026-10-26m</p>
+    <p class="version" id="versionTag">Version 2026-10-26u</p>
   </div>
 </section>
 
@@ -351,7 +356,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
         </g>
         <circle cx="63.07" cy="63.06" r="46.68" fill="none" stroke="#1a1a1a" stroke-width="3"></circle>
         <path id="phaseArcPath" fill="none"></path>
-        <text font-family="Merriweather Sans, sans-serif" font-weight="700" font-size="8.6" letter-spacing="0.9" fill="#1a1a1a">
+        <text font-family="Merriweather Sans, sans-serif" font-weight="800" font-size="10.4" letter-spacing="0.8" fill="#1a1a1a">
           <textPath id="phaseText" href="#phaseArcPath" startOffset="50%" text-anchor="middle">WAXING GIBBOUS</textPath>
         </text>
         <g id="phaseMoon"></g>
@@ -670,8 +675,8 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     const L = [["N", 0], ["E", 90], ["S", 180], ["W", 270]];
     $("letters").innerHTML = L.map(([t, b]) => `
       <g transform="rotate(${b} ${CX} ${CY})">
-        <circle cx="${CX}" cy="${CY - RING_R}" r="6.9" fill="#edebe3"></circle>
-        <text x="${CX}" y="${CY - RING_R + 3.2}" text-anchor="middle" font-family="Merriweather, Georgia, serif" font-weight="700" font-size="9" fill="#1a1a1a">${t}</text>
+        <circle cx="${CX}" cy="${CY - RING_R}" r="8.2" fill="#edebe3"></circle>
+        <text x="${CX}" y="${CY - RING_R + 3.9}" text-anchor="middle" font-family="Merriweather, Georgia, serif" font-weight="900" font-size="10.8" fill="#1a1a1a">${t}</text>
       </g>`).join("");
     // Arc for curved phase text: from upper-left, round the bottom, to upper-right.
     const tr = 39.5, at = (b) => [CX + tr * Math.sin(b * RAD), CY - tr * Math.cos(b * RAD)];
@@ -687,6 +692,8 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     let delta = ((target - ringAngle) % 360 + 540) % 360 - 180;
     ringAngle += delta;
     ring.style.transform = `rotate(${ringAngle}deg)`;
+    const up = document.querySelector("#ringMoon .upright");
+    if (up) up.style.transform = `rotate(${-ringAngle}deg)`;
   }
   function drawCompassMoon(bearing, alt) {
     const a = bearing * RAD;
@@ -694,8 +701,10 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     const below = alt < 0;
     $("ringMoon").innerHTML = `
       <g transform="translate(${x - 7} ${y - 7})">
-        <rect width="14" height="14" rx="7" fill="#edebe3"></rect>
-        <g transform="translate(1 1)"><path d="M10.5 6.395A4.53 4.53 0 1 1 5.605 1.5 3.52 3.52 0 0 0 10.5 6.395Z" fill="#edebe3" stroke="#2777e7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></g>
+        <g class="upright" style="transform: rotate(${-ringAngle}deg)">
+          <rect width="14" height="14" rx="7" fill="#edebe3"></rect>
+          <g transform="translate(1 1) rotate(10 6 6) translate(12 0) scale(-1 1) rotate(45 6 6)"><path d="M10.5 6.395A4.53 4.53 0 1 1 5.605 1.5 3.52 3.52 0 0 0 10.5 6.395Z" fill="#edebe3" stroke="#2777e7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></g>
+        </g>
       </g>`;
     compass.setAttribute("aria-label", `Moon is ${Math.round(bearing)}° from north and ${Math.round(alt)}° ${below ? "below" : "above"} the horizon`);
   }
@@ -797,10 +806,9 @@ body.modal-open::before { background: var(--scrim-on-paper); }
 
   function drawMarkers(d, m) {
     const items = [];
-    // Each marker shows the Moon's phase at that time, drawn like the calendar tiles.
-    const phaseAt = (mm) => phaseIcon(SunCalc.getMoonIllumination(atMinutes(state.date, mm)).phase, 16, 1.5);
-    if (d.day) items.push({ x: xOf(d.day.m), kind: "day", html: `<span class="marker-moon">${phaseAt(d.day.m)}</span>${fmtTime(d.day.m)}<small>day</small>`, cls: "" });
-    if (d.night) items.push({ x: xOf(d.night.m), kind: "night", html: `<span class="marker-moon">${phaseAt(d.night.m)}</span>${fmtTime(d.night.m)}<small>night</small>`, cls: "" });
+    const moonIcon = `<svg width="16" height="16" style="color:#848484" aria-hidden="true"><use href="#i-moon"></use></svg>`;
+    if (d.day) items.push({ x: xOf(d.day.m), kind: "day", html: `${moonIcon}${fmtTime(d.day.m)}<small>day</small>`, cls: "" });
+    if (d.night) items.push({ x: xOf(d.night.m), kind: "night", html: `${moonIcon}${fmtTime(d.night.m)}<small>night</small>`, cls: "" });
     items.push({ x: xOf(m), html: `<svg width="16" height="16" style="color:#2777e7"><use href="#i-clock"></use></svg>${fmtTime(m)}`, cls: "now" });
     // Keep labels from overlapping: lay out left to right with a minimum gap.
     const GAP = 58;
@@ -1601,7 +1609,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     $("resetForm").hidden = !recover;
     $("loginSub").textContent = recover ? "Choose a new password for your journal." : "Sign in to see tonight's moon and your journal.";
     const now = new Date();
-    if (sb) $("versionTag").textContent = `Version 2026-10-26m · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
+    if (sb) $("versionTag").textContent = `Version 2026-10-26u · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
     $("loginMoon").innerHTML = phaseIcon(SunCalc.getMoonIllumination(now).phase, 112, 3, "hatch");
   }
   function enterApp(session) {
