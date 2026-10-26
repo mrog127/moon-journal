@@ -270,7 +270,7 @@ body.writing .nav { display: none; }
       <button class="save-btn wide-btn" id="resetBtn" type="submit">Save new password</button>
       <p class="form-msg" id="resetMsg" aria-live="polite"></p>
     </form>
-    <p class="version" id="versionTag">Version 2026-10-26b</p>
+    <p class="version" id="versionTag">Version 2026-10-26c</p>
   </div>
 </section>
 
@@ -378,7 +378,7 @@ body.writing .nav { display: none; }
 
 <script src="https://cdn.jsdelivr.net/npm/suncalc@1.9.0/suncalc.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="config.js?v=2026-10-26b"></script>
+<script>document.write('<script src="config.js?t=' + Date.now() + '"><\/script>');</script>
 <script>
 (() => {
   // ---------- Settings ----------
@@ -393,7 +393,10 @@ body.writing .nav { display: none; }
   const $ = (id) => document.getElementById(id);
 
   // ---------- Backend (Supabase) ----------
-  const CFG = window.MOON_CONFIG || {};
+  const RAW = window.MOON_CONFIG || {};
+  // Accept the project URL with or without extra parts like /rest/v1/, and ignore stray spaces.
+  const cleanUrl = (u) => { try { return new URL(String(u).trim()).origin; } catch (e) { return String(u || "").trim(); } };
+  const CFG = { supabaseUrl: cleanUrl(RAW.supabaseUrl), supabaseAnonKey: String(RAW.supabaseAnonKey || "").trim() };
   const configured = !!(window.supabase && CFG.supabaseUrl && CFG.supabaseAnonKey && !/YOUR-/.test(CFG.supabaseUrl + CFG.supabaseAnonKey));
   const sb = configured ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }) : null;
   let uid = null;
@@ -1152,7 +1155,7 @@ body.writing .nav { display: none; }
     $("resetForm").hidden = !recover;
     $("loginSub").textContent = recover ? "Choose a new password for your journal." : "Sign in to see tonight's moon and your journal.";
     const now = new Date();
-    if (sb) $("versionTag").textContent = `Version 2026-10-26b · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
+    if (sb) $("versionTag").textContent = `Version 2026-10-26c · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
     $("loginMoon").innerHTML = phaseIcon(SunCalc.getMoonIllumination(now).phase, 112, 3, "hatch");
   }
   function enterApp(session) {
