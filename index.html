@@ -203,6 +203,7 @@ body.writing .nav { display: none; }
 .wide-btn[disabled] { opacity: 0.6; }
 .link-btn { align-self: center; font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; padding: 6px; }
 .form-msg { margin: 0; min-height: 20px; text-align: center; font-size: 13px; font-weight: 300; line-height: 1.5; }
+.version { margin: 28px 0 0; font-size: 11px; color: var(--mute); font-variant-numeric: tabular-nums; }
 .form-msg.error { color: #b0412e; font-weight: 700; }
 .account { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; padding: 12px 4px 0; border-top: 1.5px dashed var(--mute); font-size: 12px; color: var(--mute); }
 .account span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
@@ -269,6 +270,7 @@ body.writing .nav { display: none; }
       <button class="save-btn wide-btn" id="resetBtn" type="submit">Save new password</button>
       <p class="form-msg" id="resetMsg" aria-live="polite"></p>
     </form>
+    <p class="version" id="versionTag">Version 2026-10-26b</p>
   </div>
 </section>
 
@@ -376,7 +378,7 @@ body.writing .nav { display: none; }
 
 <script src="https://cdn.jsdelivr.net/npm/suncalc@1.9.0/suncalc.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="config.js"></script>
+<script src="config.js?v=2026-10-26b"></script>
 <script>
 (() => {
   // ---------- Settings ----------
@@ -1150,6 +1152,7 @@ body.writing .nav { display: none; }
     $("resetForm").hidden = !recover;
     $("loginSub").textContent = recover ? "Choose a new password for your journal." : "Sign in to see tonight's moon and your journal.";
     const now = new Date();
+    if (sb) $("versionTag").textContent = `Version 2026-10-26b · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
     $("loginMoon").innerHTML = phaseIcon(SunCalc.getMoonIllumination(now).phase, 112, 3, "hatch");
   }
   function enterApp(session) {
@@ -1173,8 +1176,16 @@ body.writing .nav { display: none; }
       $("password").value = "";
       enterApp(data.session);
     } catch (err) {
-      const bad = /invalid/i.test(err.message || "");
-      loginMsg($("loginMsg"), bad ? "That email and password don't match." : "Couldn't reach the server. Check your connection and try again.", true);
+      const m = (err && err.message) || "";
+      let text;
+      if (/invalid login credentials/i.test(m)) text = "That email and password don't match.";
+      else if (/invalid api key|no api key|apikey|jwt/i.test(m)) text = "The Supabase key in config.js isn't right. Copy the anon key again with the copy button.";
+      else if (/not confirmed/i.test(m)) text = "This account isn't confirmed yet. In Supabase, recreate the user with Auto Confirm checked.";
+      else if (/logins are disabled|provider is disabled/i.test(m)) text = "Email sign-in is turned off in Supabase. Turn the Email provider back on (only sign-ups should be off).";
+      else if (/failed to fetch|network|load failed/i.test(m)) text = "Couldn't reach Supabase. Check the project URL in config.js.";
+      else text = "Sign-in failed: " + (m || "unknown error");
+      loginMsg($("loginMsg"), text, true);
+      console.error("Sign-in error:", err);
     } finally { $("loginBtn").disabled = false; }
   });
   $("forgotBtn").addEventListener("click", async () => {
@@ -1215,7 +1226,11 @@ body.writing .nav { display: none; }
     if (!sb) {
       showLogin();
       $("loginForm").hidden = true;
-      $("loginSub").textContent = "Almost there: add your Supabase project URL and anon key to config.js, then reload.";
+      $("loginSub").textContent = !window.supabase
+        ? "The sign-in code didn't load. Check your connection and reload."
+        : !window.MOON_CONFIG
+          ? "config.js didn't load. Reload the page; if it keeps happening, check config.js is in the repo."
+          : "Almost there: config.js still has the placeholder URL or key. Add your Supabase project URL and anon key, then push.";
       return;
     }
     const recovering = /type=recovery/.test(location.hash);
