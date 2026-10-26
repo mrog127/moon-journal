@@ -275,7 +275,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
 .account span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .account .link-btn { color: var(--ink); padding: 4px 0; flex: none; }
 .compass-hint {
-  position: absolute; z-index: 4; top: 122px; right: 13px; width: 100px; text-align: center;
+  position: absolute; z-index: 4; top: 122px; right: 0; width: 139px; white-space: nowrap; text-align: center;
   font-size: 10px; font-weight: 700; color: var(--mute); background: var(--paper); border-radius: 8px; padding: 2px 0;
 }
 
@@ -365,7 +365,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
       <button class="save-btn wide-btn" id="resetBtn" type="submit">Save new password</button>
       <p class="form-msg" id="resetMsg" aria-live="polite"></p>
     </form>
-    <p class="version" id="versionTag">Version 2026-10-26ac</p>
+    <p class="version" id="versionTag">Version 2026-10-26ad</p>
   </div>
 </section>
 
@@ -544,6 +544,9 @@ body.modal-open::before { background: var(--scrim-on-paper); }
   // Accept the project URL with or without extra parts like /rest/v1/, and ignore stray spaces.
   const cleanUrl = (u) => { try { return new URL(String(u).trim()).origin; } catch (e) { return String(u || "").trim(); } };
   const CFG = { supabaseUrl: cleanUrl(RAW.supabaseUrl), supabaseAnonKey: String(RAW.supabaseAnonKey || "").trim(), vapidPublicKey: String(RAW.vapidPublicKey || "").trim() };
+  // Supabase's newer function gateway only accepts the "publishable" key, so functions get that one when it's set.
+  const pubKey = String(RAW.supabasePublishableKey || "").trim();
+  CFG.functionsKey = /^sb_publishable_/.test(pubKey) ? pubKey : CFG.supabaseAnonKey;
   const configured = !!(window.supabase && CFG.supabaseUrl && CFG.supabaseAnonKey && !/YOUR-/.test(CFG.supabaseUrl + CFG.supabaseAnonKey));
   const sb = configured ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }) : null;
   let uid = null;
@@ -1215,7 +1218,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
       const { data: { session } } = await sb.auth.getSession();
       const r = await fetch(`${CFG.supabaseUrl}/functions/v1/clean-dictation`, {
         method: "POST", body: form, signal: ctrl.signal,
-        headers: { Authorization: `Bearer ${(session && session.access_token) || CFG.supabaseAnonKey}`, apikey: CFG.supabaseAnonKey },
+        headers: { Authorization: `Bearer ${(session && session.access_token) || CFG.functionsKey}`, apikey: CFG.functionsKey },
       });
       const raw = await r.text();
       let data = null;
@@ -1846,7 +1849,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     $("resetForm").hidden = !recover;
     $("loginSub").textContent = recover ? "Choose a new password for your journal." : "Sign in to see tonight's moon and your journal.";
     const now = new Date();
-    if (sb) $("versionTag").textContent = `Version 2026-10-26ac · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
+    if (sb) $("versionTag").textContent = `Version 2026-10-26ad · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
     $("loginMoon").innerHTML = phaseIcon(SunCalc.getMoonIllumination(now).phase, 112, 3, "hatch");
   }
   function enterApp(session) {
