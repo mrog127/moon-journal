@@ -166,10 +166,14 @@ body.writing .nav { display: none; }
   display: grid; place-items: center;
   padding: 16px max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
 }
+/* A strip at the very top that the iPhone reads for the status-bar color:
+   paper normally, and the dimmed paper color while a pop-up is open. */
+:root { --scrim-on-paper: #b2b0ab; }   /* what the overlay looks like over the paper background */
 body::before {
-  content: ""; position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px);
+  content: ""; position: fixed; top: 0; left: 0; right: 0; height: max(1px, env(safe-area-inset-top, 0px));
   background: var(--paper); z-index: 30; pointer-events: none;
 }
+body.modal-open::before { background: var(--scrim-on-paper); }
 .sheet {
   box-sizing: border-box; width: 100%; max-width: 370px; background: var(--paper);
   border: var(--stroke) solid var(--ink); border-radius: var(--radius);
@@ -326,7 +330,7 @@ body::before {
       <button class="save-btn wide-btn" id="resetBtn" type="submit">Save new password</button>
       <p class="form-msg" id="resetMsg" aria-live="polite"></p>
     </form>
-    <p class="version" id="versionTag">Version 2026-10-26l</p>
+    <p class="version" id="versionTag">Version 2026-10-26m</p>
   </div>
 </section>
 
@@ -1576,12 +1580,13 @@ body::before {
   }
 
   // ---------- Status bar color ----------
-  // iPhone sometimes keeps an old status-bar tint after an overlay closes; re-setting the theme color refreshes it.
+  // Match the status bar to what's on screen: the dimmed color while a pop-up is open
+  // (the full-screen photo viewer is paper, so it counts as closed), paper otherwise.
   const themeMeta = document.querySelector('meta[name="theme-color"]');
   function refreshStatusBar() {
-    if (!themeMeta) return;
-    themeMeta.setAttribute("content", "#edebe4");
-    requestAnimationFrame(() => themeMeta.setAttribute("content", "#edebe3"));
+    const dimmed = [...document.querySelectorAll(".overlay:not(.viewer)")].some((o) => !o.hidden);
+    document.body.classList.toggle("modal-open", dimmed);
+    if (themeMeta) themeMeta.setAttribute("content", dimmed ? "#b2b0ab" : "#edebe3");
   }
   const overlayWatch = new MutationObserver(refreshStatusBar);
   document.querySelectorAll(".overlay").forEach((o) => overlayWatch.observe(o, { attributes: true, attributeFilter: ["hidden"] }));
@@ -1596,7 +1601,7 @@ body::before {
     $("resetForm").hidden = !recover;
     $("loginSub").textContent = recover ? "Choose a new password for your journal." : "Sign in to see tonight's moon and your journal.";
     const now = new Date();
-    if (sb) $("versionTag").textContent = `Version 2026-10-26l · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
+    if (sb) $("versionTag").textContent = `Version 2026-10-26m · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
     $("loginMoon").innerHTML = phaseIcon(SunCalc.getMoonIllumination(now).phase, 112, 3, "hatch");
   }
   function enterApp(session) {
