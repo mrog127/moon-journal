@@ -5,14 +5,17 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#edebe3">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Moon Journal">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23edebe3' stroke='%231a1a1a' stroke-width='3'/%3E%3Cpath d='M16 2a14 14 0 0 1 0 28' fill='%231a1a1a'/%3E%3C/svg%3E">
 <title>Moon Journal</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Merriweather:wght@700&family=Merriweather+Sans:ital,wght@0,300;0,700;1,300&display=swap">
 <style>
-:root { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
 body { margin: 0; font-size: 14px; }
 img { max-width: 100%; }
 [hidden] { display: none !important; }
@@ -29,27 +32,31 @@ img { max-width: 100%; }
   --radius: 40px;
   color-scheme: light;
 }
-html, body { height: 100%; }
+/* The page never scrolls; only the journal text and photos do. */
+html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
 body {
   background: var(--paper);
   color: var(--ink);
   font-family: var(--sans);
   -webkit-tap-highlight-color: transparent;
-  padding-left: max(16px, env(safe-area-inset-left, 0px));
-  padding-right: max(16px, env(safe-area-inset-right, 0px));
 }
 button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
 button:focus-visible, textarea:focus-visible { outline: 2px solid var(--now); outline-offset: 3px; }
 svg { display: block; }
 
 .app {
-  position: relative; box-sizing: border-box;
-  max-width: 386px;
-  margin: 0 auto;
-  padding: 36px 8px 140px;
+  position: fixed; left: 0; right: 0; margin: 0 auto;
+  top: var(--app-top, 0px); height: var(--app-h, 100%);
+  box-sizing: border-box; max-width: calc(386px + 2 * max(16px, env(safe-area-inset-left, 0px)));
+  display: flex; flex-direction: column;
+  padding-top: max(36px, calc(env(safe-area-inset-top, 0px) + 14px));
+  padding-left: calc(max(16px, env(safe-area-inset-left, 0px)) + 8px);
+  padding-right: calc(max(16px, env(safe-area-inset-right, 0px)) + 8px);
+  padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px));   /* room for the day buttons */
 }
-body.writing .journal { padding-bottom: 70vh; }
-body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--paper); }
+body.writing .app { padding-bottom: 0; }
+.top-area { flex: none; }
+body.writing .top-area { display: none; }
 
 /* Header */
 .top { position: relative; height: 98px; padding-left: 4px; }
@@ -85,9 +92,9 @@ button.marker:active { transform: translateX(-50%) scale(0.94); }
 .marker small { font-size: 10px; font-weight: 300; letter-spacing: 0; margin-top: -3px; }
 
 /* Journal */
-.journal { margin-top: 9px; padding: 0 4px; }
+.journal { flex: 1; min-height: 0; display: flex; flex-direction: column; margin-top: 9px; padding: 0 4px; }
 .journal-head {
-  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 4;
+  flex: none; position: relative; z-index: 4;
   display: flex; align-items: center; gap: 10px; min-height: 52px;
   margin: 0 -4px; padding: 0 4px; background: var(--paper);
 }
@@ -104,6 +111,11 @@ button.marker:active { transform: translateX(-50%) scale(0.94); }
 .save-btn:active { transform: scale(0.95); }
 .save-btn { display: none; }
 body.writing .save-btn { display: block; }
+.journal-scroll {
+  position: relative; flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain; margin: 0 -4px; padding: 0 4px 24px;
+}
+body.writing .journal-scroll { padding-bottom: 32px; }
 #entry {
   display: block; width: 100%; min-height: 84px; margin: 2px 0 0; padding: 0;
   border: 0; outline: none; resize: none; overflow: hidden;
@@ -186,7 +198,10 @@ body.writing .nav { display: none; }
 .info-note:empty { display: none; }
 
 /* Sign-in */
-.login { min-height: calc(100vh - 32px); display: grid; place-items: center; padding-block: 32px; }
+.login {
+  position: fixed; inset: 0; overflow-y: auto; display: grid; place-items: center;
+  padding: max(32px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(32px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
 .login-inner { width: 100%; max-width: 340px; display: flex; flex-direction: column; align-items: center; text-align: center; }
 .login-moon { width: 112px; height: 112px; }
 .login h1 { font-family: var(--serif); font-weight: 700; font-size: 28px; margin: 22px 0 6px; }
@@ -212,6 +227,20 @@ body.writing .nav { display: none; }
   position: absolute; z-index: 4; top: 116px; right: 13px; width: 100px; text-align: center;
   font-size: 10px; font-weight: 700; color: var(--mute); background: var(--paper); border-radius: 8px; padding: 2px 0;
 }
+
+/* Reminders */
+.rem-list { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
+.rem-row { display: flex; align-items: center; gap: 14px; border: var(--stroke) solid var(--ink); border-radius: 20px; padding: 12px 14px; cursor: pointer; }
+.rem-row b { display: block; font-size: 14px; }
+.rem-row small { display: block; font-size: 12px; font-weight: 300; margin-top: 2px; line-height: 1.4; }
+.rem-row input { position: absolute; opacity: 0; pointer-events: none; }
+.switch { margin-left: auto; flex: none; width: 44px; height: 26px; border: var(--stroke) solid var(--ink); border-radius: 20px; position: relative; box-sizing: border-box; transition: background 0.15s; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--ink); transition: transform 0.15s; }
+.rem-row input:checked + .switch { background: var(--ink); }
+.rem-row input:checked + .switch::after { background: var(--paper); transform: translateX(18px); }
+.rem-row input:focus-visible + .switch { outline: 2px solid var(--now); outline-offset: 2px; }
+.rem-list.off .rem-row { opacity: 0.45; pointer-events: none; }
+.rem-actions { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 16px; }
 
 @media (prefers-reduced-motion: reduce) { #ring { transition: none; } }
 </style>
@@ -270,12 +299,13 @@ body.writing .nav { display: none; }
       <button class="save-btn wide-btn" id="resetBtn" type="submit">Save new password</button>
       <p class="form-msg" id="resetMsg" aria-live="polite"></p>
     </form>
-    <p class="version" id="versionTag">Version 2026-10-26c</p>
+    <p class="version" id="versionTag">Version 2026-10-26e</p>
   </div>
 </section>
 
 <div id="appRoot" hidden>
 <main class="app">
+  <div class="top-area" id="topArea">
   <header class="top">
     <span class="compass-hint" id="compassHint" hidden>Tap compass to turn on</span>
     <h1 class="date" id="dateTitle">Monday,<br>10/26</h1>
@@ -303,6 +333,7 @@ body.writing .nav { display: none; }
     <div class="markers" id="markers"></div>
   </section>
 
+  </div>
   <section class="journal" id="journal">
     <div class="journal-head" id="journalHead">
       <h2>Journal Entry</h2>
@@ -311,8 +342,10 @@ body.writing .nav { display: none; }
       <button class="save-btn" id="saveBtn">Save</button>
       <input type="file" id="fileInput" accept="image/*" multiple hidden>
     </div>
-    <textarea id="entry" rows="3" placeholder="Tap to start writing..." aria-label="Journal entry"></textarea>
-    <div class="photos" id="photos"></div>
+    <div class="journal-scroll" id="journalScroll">
+      <textarea id="entry" rows="3" placeholder="Tap to start writing..." aria-label="Journal entry"></textarea>
+      <div class="photos" id="photos"></div>
+    </div>
   </section>
 </main>
 
@@ -339,7 +372,7 @@ body.writing .nav { display: none; }
         <button class="round" id="calClose" aria-label="Close calendar"><svg><use href="#i-x"></use></svg></button>
       </div>
     </div>
-    <div class="account"><span id="acctEmail"></span><button class="link-btn" id="signOutBtn" type="button">Sign out</button></div>
+    <div class="account"><span id="acctEmail"></span><span style="display:flex;gap:16px;flex:none"><button class="link-btn" id="remindersBtn" type="button">Reminders</button><button class="link-btn" id="signOutBtn" type="button">Sign out</button></span></div>
   </div>
 </div>
 
@@ -363,6 +396,25 @@ body.writing .nav { display: none; }
       <div><dt>Sky</dt><dd id="infoSky">Dark</dd></div>
     </dl>
     <p class="info-note" id="infoNote"></p>
+  </div>
+</div>
+
+<div class="overlay" id="reminders" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="remTitle">
+    <div class="sheet-head">
+      <h2 id="remTitle">Reminders</h2>
+      <button class="round" id="remClose" aria-label="Close"><svg><use href="#i-x"></use></svg></button>
+    </div>
+    <div class="rem-list" id="remList">
+      <label class="rem-row"><span><b>Daytime moon</b><small>At the best daytime viewing time, when the Moon is up</small></span><input type="checkbox" id="remDay" checked><span class="switch" aria-hidden="true"></span></label>
+      <label class="rem-row"><span><b>Night moon</b><small>At the best night viewing time, if it's before 10pm</small></span><input type="checkbox" id="remNight" checked><span class="switch" aria-hidden="true"></span></label>
+      <label class="rem-row"><span><b>Journal</b><small>At 10pm, if you haven't written that day's entry</small></span><input type="checkbox" id="remJournal" checked><span class="switch" aria-hidden="true"></span></label>
+    </div>
+    <p class="info-note" id="remNote"></p>
+    <div class="rem-actions">
+      <button class="save-btn wide-btn" id="remOn" type="button">Turn on reminders</button>
+      <button class="link-btn" id="remOff" type="button" hidden>Turn off on this phone</button>
+    </div>
   </div>
 </div>
 
@@ -396,7 +448,7 @@ body.writing .nav { display: none; }
   const RAW = window.MOON_CONFIG || {};
   // Accept the project URL with or without extra parts like /rest/v1/, and ignore stray spaces.
   const cleanUrl = (u) => { try { return new URL(String(u).trim()).origin; } catch (e) { return String(u || "").trim(); } };
-  const CFG = { supabaseUrl: cleanUrl(RAW.supabaseUrl), supabaseAnonKey: String(RAW.supabaseAnonKey || "").trim() };
+  const CFG = { supabaseUrl: cleanUrl(RAW.supabaseUrl), supabaseAnonKey: String(RAW.supabaseAnonKey || "").trim(), vapidPublicKey: String(RAW.vapidPublicKey || "").trim() };
   const configured = !!(window.supabase && CFG.supabaseUrl && CFG.supabaseAnonKey && !/YOUR-/.test(CFG.supabaseUrl + CFG.supabaseAnonKey));
   const sb = configured ? window.supabase.createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } }) : null;
   let uid = null;
@@ -868,7 +920,7 @@ body.writing .nav { display: none; }
     saveState.classList.remove("show");
     renderDay();
     await loadEntry();
-    window.scrollTo({ top: 0 });
+    $("journalScroll").scrollTop = 0;
   }
 
   // Header buttons keep the keyboard open until their action runs, so nothing jumps mid-tap.
@@ -887,16 +939,15 @@ body.writing .nav { display: none; }
     scheduleSave();
   });
   entry.addEventListener("focus", () => {
+    // While typing, the moon area folds away so Journal Entry sits at the top and the text has room above the keyboard.
     document.body.classList.add("writing");
-    const scrollToTitle = () => {
-      const top = $("journalHead").getBoundingClientRect().top + window.scrollY - 16;
-      window.scrollTo({ top, behavior: "smooth" });
-    };
-    requestAnimationFrame(scrollToTitle);
-    setTimeout(scrollToTitle, 350);   // again once the keyboard has opened
+    fitToViewport();
+    requestAnimationFrame(keepCaretVisible);
+    setTimeout(() => { fitToViewport(); keepCaretVisible(); }, 350);   // again once the keyboard has opened
   });
   entry.addEventListener("blur", () => {
     document.body.classList.remove("writing");
+    setTimeout(fitToViewport, 50);
     if (saveTimer) saveNow();
   });
   ["click", "keyup"].forEach((ev) => entry.addEventListener(ev, keepCaretVisible));
@@ -916,19 +967,36 @@ body.writing .nav { display: none; }
     mirror.remove();
     return y;
   }
+  const scroller = $("journalScroll");
   function keepCaretVisible() {
     if (document.activeElement !== entry) return;
     requestAnimationFrame(() => {
-      const vv = window.visualViewport;
-      const viewTop = vv ? vv.offsetTop : 0;
-      const viewH = vv ? vv.height : window.innerHeight;
-      const y = entry.getBoundingClientRect().top + caretTop();
-      const lineH = 21, margin = 48, headH = $("journalHead").getBoundingClientRect().height + 8;
-      if (y + lineH > viewTop + viewH - margin) window.scrollBy({ top: y + lineH - (viewTop + viewH - margin) });
-      else if (y < viewTop + headH) window.scrollBy({ top: y - viewTop - headH });
+      const y = entry.offsetTop + caretTop();
+      const lineH = 21, pad = 24;
+      if (y + lineH > scroller.scrollTop + scroller.clientHeight - pad) scroller.scrollTop = y + lineH - scroller.clientHeight + pad;
+      else if (y < scroller.scrollTop + 8) scroller.scrollTop = Math.max(0, y - 8);
     });
   }
-  if (window.visualViewport) window.visualViewport.addEventListener("resize", keepCaretVisible);
+  // Keep the app sized to the visible screen (it shrinks above the keyboard) and stop the page itself from scrolling.
+  function fitToViewport() {
+    const vv = window.visualViewport;
+    const h = vv ? vv.height : window.innerHeight;
+    const top = vv ? vv.offsetTop : 0;
+    document.documentElement.style.setProperty("--app-h", h + "px");
+    document.documentElement.style.setProperty("--app-top", top + "px");
+  }
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", () => { fitToViewport(); keepCaretVisible(); });
+    window.visualViewport.addEventListener("scroll", fitToViewport);
+  }
+  window.addEventListener("resize", fitToViewport);
+  fitToViewport();
+  // Tapping the empty space under the text puts the cursor at the end.
+  scroller.addEventListener("click", (e) => {
+    if (e.target !== scroller || entry.disabled) return;
+    entry.focus();
+    entry.setSelectionRange(entry.value.length, entry.value.length);
+  });
 
   // Photos: shrink, then add to the end of the entry.
   function shrink(file, max = 1800) {
@@ -970,7 +1038,7 @@ body.writing .nav { display: none; }
     renderPhotos();
     await saveNow(!failed);
     if (failed) showSaved(failed === files.length ? "Couldn't upload. Check your connection." : `${failed} photo${failed > 1 ? "s" : ""} didn't upload.`, true);
-    photosEl.lastElementChild && photosEl.lastElementChild.scrollIntoView({ behavior: "smooth", block: "center" });
+    scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
   });
 
   // Photo viewer
@@ -1085,6 +1153,7 @@ body.writing .nav { display: none; }
     if (e.key !== "Escape") return;
     if (!$("viewer").hidden) closeViewer();
     else if (!$("moonInfo").hidden) closeInfo();
+    else if (!$("reminders").hidden) $("reminders").hidden = true;
     else if (!$("calendar").hidden) closeCalendar();
   });
 
@@ -1099,6 +1168,7 @@ body.writing .nav { display: none; }
     LOC = loc;
     $("placeName").textContent = loc.label;
     if (moved) { dayCache.clear(); renderDay(); }
+    if (moved || loc.source === "device") syncSubscription();
   }
   // Town, state and ZIP for the label (free lookup, no key needed).
   const placeCache = {};
@@ -1145,6 +1215,117 @@ body.writing .nav { display: none; }
     }).observe(chartWrap);
     document.addEventListener("visibilitychange", () => { if (!document.hidden) updateLive(); });
   }
+  // ---------- Reminders (push notifications) ----------
+  // The phone subscribes once; Supabase sends the reminders on a schedule, using the
+  // location and time zone saved with the subscription.
+  const pushSupported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  let swReg = null;
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("sw.js").then((r) => { swReg = r; }).catch(() => {});
+  }
+  const b64ToBytes = (b) => {
+    const s = (b + "=".repeat((4 - (b.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+    return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  };
+  const remPrefs = () => ({ day: $("remDay").checked, night: $("remNight").checked, journal: $("remJournal").checked });
+  async function currentSub() {
+    if (!pushSupported) return null;
+    const reg = swReg || (await navigator.serviceWorker.getRegistration());
+    return reg ? reg.pushManager.getSubscription() : null;
+  }
+  async function saveSub(sub, prefs) {
+    const j = sub.toJSON();
+    const row = {
+      user_id: uid, endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth,
+      lat: LOC.lat, lng: LOC.lng, tz: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      updated_at: new Date().toISOString(),
+    };
+    if (prefs) row.prefs = prefs;
+    must(await sb.from("push_subscriptions").upsert(row, { onConflict: "endpoint" }));
+  }
+  // Keep the saved location and time zone current whenever the app opens.
+  async function syncSubscription() {
+    if (!uid || !pushSupported || Notification.permission !== "granted") return;
+    try { const sub = await currentSub(); if (sub) await saveSub(sub); } catch (e) { /* tries again next open */ }
+  }
+  const remNote = (t) => { $("remNote").textContent = t; };
+  async function renderReminders() {
+    const sub = await currentSub().catch(() => null);
+    $("remList").classList.toggle("off", !sub);
+    $("remOn").hidden = !!sub;
+    $("remOff").hidden = !sub;
+    if (!pushSupported) {
+      remNote(isIOS && !standalone
+        ? "To get reminders, add Moon Journal to your Home Screen (Share, then Add to Home Screen) and open it from there."
+        : "This browser can't show reminders.");
+      $("remOn").hidden = true;
+    } else if (isIOS && !standalone) {
+      remNote("Open Moon Journal from your Home Screen to turn on reminders.");
+      $("remOn").hidden = true;
+    } else if (!CFG.vapidPublicKey) {
+      remNote("Reminders aren't set up yet: config.js needs the vapidPublicKey.");
+      $("remOn").hidden = true;
+    } else if (Notification.permission === "denied") {
+      remNote("Notifications are blocked for Moon Journal. Turn them on in Settings, Notifications, Moon Journal, then come back.");
+      $("remOn").hidden = true;
+    } else if (sub) {
+      remNote("Reminders are on for this phone. Times follow your current location.");
+      try {
+        const row = must(await sb.from("push_subscriptions").select("prefs").eq("endpoint", sub.endpoint).maybeSingle());
+        if (row && row.prefs) { $("remDay").checked = row.prefs.day !== false; $("remNight").checked = row.prefs.night !== false; $("remJournal").checked = row.prefs.journal !== false; }
+      } catch (e) { /* keep what's shown */ }
+    } else {
+      remNote("");
+    }
+  }
+  $("remindersBtn").addEventListener("click", async () => {
+    $("calendar").hidden = true;
+    $("reminders").hidden = false;
+    await renderReminders();
+  });
+  $("remClose").addEventListener("click", () => { $("reminders").hidden = true; });
+  $("reminders").addEventListener("click", (e) => { if (e.target === $("reminders")) $("reminders").hidden = true; });
+  $("remOn").addEventListener("click", async () => {
+    $("remOn").disabled = true;
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { remNote("Notifications weren't allowed. You can turn them on in Settings, Notifications, Moon Journal."); return; }
+      const reg = swReg || (await navigator.serviceWorker.ready);
+      const sub = (await reg.pushManager.getSubscription()) ||
+        (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(CFG.vapidPublicKey) }));
+      await saveSub(sub, remPrefs());
+      await renderReminders();
+    } catch (e) {
+      remNote("Couldn't turn on reminders. Check your connection and try again.");
+    } finally { $("remOn").disabled = false; }
+  });
+  $("remOff").addEventListener("click", async () => {
+    try {
+      const sub = await currentSub();
+      if (sub) {
+        await sb.from("push_subscriptions").delete().eq("endpoint", sub.endpoint);
+        await sub.unsubscribe();
+      }
+    } catch (e) { /* already off */ }
+    await renderReminders();
+  });
+  ["remDay", "remNight", "remJournal"].forEach((id) => $(id).addEventListener("change", async () => {
+    try { const sub = await currentSub(); if (sub) await saveSub(sub, remPrefs()); }
+    catch (e) { remNote("Couldn't save that change. Check your connection."); }
+  }));
+
+  // Opening the app from a reminder jumps to that day (and the moon details).
+  async function openFromLink() {
+    const q = new URLSearchParams(location.search);
+    const date = q.get("date"), open = q.get("open");
+    if (!date && !open) return;
+    history.replaceState(null, "", location.pathname);
+    if (date && /^\d{4}-\d{2}-\d{2}$/.test(date) && date !== state.date) await goTo(date);
+    if (open === "day" || open === "night") openInfo(open);
+  }
+
   // ---------- Sign-in ----------
   const loginMsg = (el, text, error) => { el.textContent = text; el.classList.toggle("error", !!error); };
   function showLogin(mode) {
@@ -1155,7 +1336,7 @@ body.writing .nav { display: none; }
     $("resetForm").hidden = !recover;
     $("loginSub").textContent = recover ? "Choose a new password for your journal." : "Sign in to see tonight's moon and your journal.";
     const now = new Date();
-    if (sb) $("versionTag").textContent = `Version 2026-10-26c · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
+    if (sb) $("versionTag").textContent = `Version 2026-10-26e · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
     $("loginMoon").innerHTML = phaseIcon(SunCalc.getMoonIllumination(now).phase, 112, 3, "hatch");
   }
   function enterApp(session) {
@@ -1166,6 +1347,8 @@ body.writing .nav { display: none; }
     $("appRoot").hidden = false;
     if (!booted) boot();
     else if (newUser) { renderDay(); loadEntry(); }
+    openFromLink();
+    syncSubscription();
   }
   $("loginForm").addEventListener("submit", async (e) => {
     e.preventDefault();

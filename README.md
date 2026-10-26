@@ -46,3 +46,23 @@ This makes the "Forgot password?" email link come back to the app.
 - `entries`: one row per day — `text`, `photos` (list of file paths), `moon` (phase, illumination, rise/set and best day/night times saved with the entry), `updated_at`.
 - `photos` bucket (private): `<user id>/<date>/<photo id>.jpg`, shrunk to 1800px JPEG before upload. The app shows them with links that expire after 6 hours.
 - Unsaved typing is also kept on the phone until the server confirms the save, so a dropped connection doesn't lose text.
+
+## Reminders (push notifications)
+
+The app can remind you at the best daytime moon time, at the best night moon time (when that's before 10pm), and at 10pm to write the day's entry (skipped if you already have). Supabase sends them every 5 minutes on a schedule, using the location and time zone your phone last reported.
+
+| File | What it is |
+|---|---|
+| `sw.js` | Service worker: shows reminders and opens the app when you tap one |
+| `manifest.webmanifest`, `icons/` | Home Screen app name and icons |
+| `supabase/reminders.sql` | Tables for phones that subscribed and a log so nothing sends twice |
+| `supabase/functions/send-reminders/index.ts` | The function that works out the times and sends the reminders |
+| `.reminder-secrets.txt` | Your private keys and the schedule SQL. On your Mac only, never pushed |
+
+One-time setup:
+1. **SQL Editor**: run `supabase/reminders.sql`.
+2. **Edge Functions → Deploy a new function → Via Editor**: name it `send-reminders`, paste `supabase/functions/send-reminders/index.ts`, deploy. In the function's settings, turn **off** "Verify JWT" (the schedule uses its own secret instead).
+3. **Edge Functions → Secrets**: add the four values from `.reminder-secrets.txt`.
+4. **SQL Editor**: run the schedule SQL from `.reminder-secrets.txt`.
+5. Push the site, open Moon Journal **from your Home Screen**, tap the calendar → **Reminders** → **Turn on reminders**, and allow notifications.
+6. Optional test: run the `curl` line in `.reminder-secrets.txt`; a "Reminders are working" notification should arrive.
