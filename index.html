@@ -365,7 +365,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
       <button class="save-btn wide-btn" id="resetBtn" type="submit">Save new password</button>
       <p class="form-msg" id="resetMsg" aria-live="polite"></p>
     </form>
-    <p class="version" id="versionTag">Version 2026-10-26ab</p>
+    <p class="version" id="versionTag">Version 2026-10-26ac</p>
   </div>
 </section>
 
@@ -1206,16 +1206,31 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     if (blob.size < 2000) { setRecUI(false); showSaved("Didn't catch anything. Try again.", true); return; }
     const ext = /webm/.test(type) ? "webm" : /ogg/.test(type) ? "ogg" : "mp4";
     let text = "", problem = "";
+    // Call the function directly with a time limit, so a stuck request turns into a clear message.
+    const ctrl = new AbortController();
+    const limit = setTimeout(() => ctrl.abort(), 90000);
     try {
       const form = new FormData();
       form.append("audio", blob, `dictation.${ext}`);
-      const { data, error } = await sb.functions.invoke("clean-dictation", { body: form });
-      if (error) throw error;
-      if (data && data.error) problem = data.error;
-      else text = data.cleaned ? (data.text || "") : basicClean(data.text || "");
+      const { data: { session } } = await sb.auth.getSession();
+      const r = await fetch(`${CFG.supabaseUrl}/functions/v1/clean-dictation`, {
+        method: "POST", body: form, signal: ctrl.signal,
+        headers: { Authorization: `Bearer ${(session && session.access_token) || CFG.supabaseAnonKey}`, apikey: CFG.supabaseAnonKey },
+      });
+      const raw = await r.text();
+      let data = null;
+      try { data = JSON.parse(raw); } catch (e) { /* not JSON */ }
+      if (!r.ok) problem = r.status === 404
+        ? "The clean-dictation function isn't deployed in Supabase yet."
+        : `Transcription service error (${r.status}): ${(data && (data.error || data.message || data.msg)) || raw.slice(0, 140)}`;
+      else if (data && data.error) problem = data.error;
+      else if (data) text = data.cleaned ? (data.text || "") : basicClean(data.text || "");
+      else problem = "The transcription service sent back something unexpected.";
     } catch (e) {
-      problem = "Couldn't reach the transcription service. Check your connection and try again.";
-    }
+      problem = e && e.name === "AbortError"
+        ? "Transcription took too long (over 90 seconds). Check the clean-dictation logs in Supabase."
+        : "Couldn't reach the transcription service: " + ((e && e.message) || "network error");
+    } finally { clearTimeout(limit); }
     setRecUI(false);
     text = text.trim();
     if (problem) { showSaved(problem, true); return; }
@@ -1831,7 +1846,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     $("resetForm").hidden = !recover;
     $("loginSub").textContent = recover ? "Choose a new password for your journal." : "Sign in to see tonight's moon and your journal.";
     const now = new Date();
-    if (sb) $("versionTag").textContent = `Version 2026-10-26ab · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
+    if (sb) $("versionTag").textContent = `Version 2026-10-26ac · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
     $("loginMoon").innerHTML = phaseIcon(SunCalc.getMoonIllumination(now).phase, 112, 3, "hatch");
   }
   function enterApp(session) {
