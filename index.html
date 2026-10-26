@@ -100,7 +100,7 @@ body.writing .top-area { display: none; }
   font-weight: 700; font-size: 12px; letter-spacing: -0.02em; color: var(--mute);
   white-space: nowrap; font-variant-numeric: tabular-nums;
 }
-.marker.now { color: var(--now); z-index: 1; pointer-events: none; }
+.marker.now { color: var(--now); z-index: 1; }
 button.marker { cursor: pointer; }
 button.marker:active { transform: translateX(-50%) scale(0.94); }
 .marker small { font-size: 10px; font-weight: 300; letter-spacing: 0; margin-top: -3px; }
@@ -365,7 +365,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
       <button class="save-btn wide-btn" id="resetBtn" type="submit">Save new password</button>
       <p class="form-msg" id="resetMsg" aria-live="polite"></p>
     </form>
-    <p class="version" id="versionTag">Version 2026-10-26ad</p>
+    <p class="version" id="versionTag">Version 2026-10-26af</p>
   </div>
 </section>
 
@@ -870,7 +870,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     }
     markers.innerHTML = sorted.map((it) => it.kind
       ? `<button class="marker" data-kind="${it.kind}" style="left:${it.lx}px" aria-label="Best ${it.kind} view, ${fmtTime(it.kind === "day" ? d.day.m : d.night.m)}. Show details">${it.html}</button>`
-      : `<div class="marker ${it.cls}" style="left:${it.lx}px">${it.html}</div>`).join("");
+      : `<button class="marker ${it.cls}" data-kind="now" style="left:${it.lx}px" aria-label="Moon at ${fmtTime(m)}. Show details">${it.html}</button>`).join("");
   }
 
   // ---------- App state ----------
@@ -1367,23 +1367,37 @@ body.modal-open::before { background: var(--scrim-on-paper); }
   });
 
   // ---------- Best-view details ----------
+  // The Moon at the time on the blue line (now, or wherever it was dragged), in the same shape as the best-view samples.
+  function sampleAt(m) {
+    const p = moonAt(atMinutes(state.date, m));
+    return { m, ...p, frac: SunCalc.getMoonIllumination(atMinutes(state.date, m)).fraction, elong: separation(p.alt, p.bearing, p.sunAlt, p.sunBearing) };
+  }
   function openInfo(kind) {
     const d = dayData(state.date);
-    const s = kind === "day" ? d.day : d.night;
+    const s = kind === "now" ? sampleAt(Math.round(currentMinutes())) : kind === "day" ? d.day : d.night;
     if (!s) return;
     const dt = fromKey(state.date);
+    const isNow = kind === "now" && state.scrub == null && state.date === keyOf(new Date());
     const pre = kind === "night" && s.m < 720 ? "Early " : "";
-    $("infoTitle").textContent = kind === "day" ? "Best daytime view" : "Best night view";
+    $("infoTitle").textContent = kind === "now" ? (isNow ? "The Moon right now" : "The Moon at this time") : kind === "day" ? "Best daytime view" : "Best night view";
     $("infoTime").textContent = fmtTime(s.m);
     $("infoKind").textContent = `${pre}${WEEKDAYS[dt.getDay()]} ${dt.getMonth() + 1}/${dt.getDate()} · ${phaseName(SunCalc.getMoonIllumination(atMinutes(state.date, s.m)).phase)}`;
     $("infoIllum").innerHTML = `${Math.round(s.frac * 100)}%<small>of the disc lit</small>`;
     $("infoDir").innerHTML = `${Math.round(s.bearing)}°<small>${cardinal(s.bearing)} from the house</small>`;
     $("infoAlt").innerHTML = s.alt >= 0 ? `${Math.round(s.alt)}°<small>above the horizon</small>` : `${Math.round(-s.alt)}°<small>below the horizon</small>`;
-    $("infoSky").innerHTML = kind === "day" ? `Daylight<small>Sun ${Math.round(s.sunAlt)}° up</small>` : (s.sunAlt < -12 ? `Dark<small>full night</small>` : `Twilight<small>sky still glowing</small>`);
+    $("infoSky").innerHTML = s.sunAlt > 0 ? `Daylight<small>Sun ${Math.round(s.sunAlt)}° up</small>` : (s.sunAlt < -12 ? `Dark<small>full night</small>` : `Twilight<small>sky still glowing</small>`);
     const w = wxAt(state.date, s.m);
     if (w) $("infoSky").innerHTML = `${skyWord(w)}<small>${Math.round(w.cc)}% cloud cover</small>`;
     let note = "";
-    if (s.alt < 0) note = kind === "day" ? "The Moon stays below the horizon all day. This is when it comes closest." : "The Moon stays below the horizon after dark. This is when it comes closest.";
+    if (kind === "now") {
+      const best = s.sunAlt > 0 ? d.day : d.night;
+      if (s.alt < 0) note = `The Moon is below the horizon${isNow ? " right now" : " then"}.` + (d.night && d.night.alt > 0 ? ` Best view tonight: ${fmtTime(d.night.m)}.` : d.day && d.day.alt > 0 ? ` Best daytime view: ${fmtTime(d.day.m)}.` : "");
+      else if (s.alt < 10) note = "It's low in the sky, so trees and houses may block it. Try an open spot facing " + cardinal(s.bearing) + ".";
+      else if (s.sunAlt > 0 && s.elong < 25) note = "It's close to the Sun, so it will be hard to pick out.";
+      else if (s.frac < 0.08) note = "Only a thin sliver is lit, so it will be faint.";
+      else if (best && Math.abs(best.m - s.m) > 30 && best.alt > s.alt + 5) note = `It will be higher at ${fmtTime(best.m)} (${Math.round(best.alt)}° up).`;
+    }
+    else if (s.alt < 0) note = kind === "day" ? "The Moon stays below the horizon all day. This is when it comes closest." : "The Moon stays below the horizon after dark. This is when it comes closest.";
     else if (s.alt < 10) note = "It's low in the sky, so trees and houses may block it. Try an open spot facing " + cardinal(s.bearing) + ".";
     else if (kind === "day" && s.elong < 25) note = "It's close to the Sun, so it will be hard to pick out. Shade your eyes from the Sun.";
     else if (s.frac < 0.08) note = "Only a thin sliver is lit, so it will be faint.";
@@ -1404,7 +1418,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     $("moonInfo").hidden = false;
   }
   const closeInfo = () => { $("moonInfo").hidden = true; };
-  markers.addEventListener("click", (e) => { const b = e.target.closest("button.marker"); if (b) openInfo(b.dataset.kind); });
+  markers.addEventListener("click", (e) => { const b = e.target.closest("button.marker"); if (b) openInfo(b.dataset.kind); });   // day, night, or now
   $("infoClose").addEventListener("click", closeInfo);
   $("moonInfo").addEventListener("click", (e) => { if (e.target === $("moonInfo")) closeInfo(); });
 
@@ -1469,6 +1483,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
   const pageW = () => appEl.getBoundingClientRect().width + 24;
   let turning = false, ghost = null;
   function makeGhost() {
+    document.querySelectorAll(".app.ghost").forEach((g) => g.remove());   // never leave an old copy behind
     ghost = appEl.cloneNode(true);
     ghost.classList.add("ghost");
     ghost.setAttribute("aria-hidden", "true");
@@ -1485,24 +1500,49 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     appEl.style.transform = ax ? `translateX(${ax}px)` : "";
   }
   function dropGhost() {
-    if (ghost) ghost.remove();
+    document.querySelectorAll(".app.ghost").forEach((g) => g.remove());
     ghost = null;
     appEl.classList.remove("sliding");
     appEl.style.transform = "";
   }
+  // Day changes run one at a time, in order, so a quick back-and-forth can't leave the wrong day showing.
+  let navChain = Promise.resolve();
+  function go(k) {
+    navChain = navChain.then(() => (state.date === k ? null : goTo(k))).catch((err) => console.warn("goTo", err));
+    return navChain;
+  }
+  // Safety net: if a turn ever gets stuck (a lost touch, an error), put the page back after a few seconds.
+  let watchdog = null, dragging = false;
+  function startTurn() {
+    turning = true;
+    clearTimeout(watchdog);
+    watchdog = setTimeout(function check() {
+      if (dragging) { watchdog = setTimeout(check, 1500); return; }
+      resetTurn();
+    }, 3000);
+  }
+  function resetTurn() {
+    clearTimeout(watchdog);
+    dragging = false;
+    dropGhost();
+    turning = false;
+  }
+  window.addEventListener("pagehide", resetTurn);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) resetTurn(); });
   async function turnTo(k, dir) {            // dir: +1 = forward (pages move left), -1 = back
     if (turning || k === state.date) return;
-    turning = true;
-    const w = pageW();
-    makeGhost();
-    place(0, dir * w, false);
-    const loading = goTo(k);
-    void appEl.offsetWidth;
-    place(-dir * w, 0, true);
-    await wait(270);
-    dropGhost();
-    await loading;
-    turning = false;
+    startTurn();
+    try {
+      const w = pageW();
+      makeGhost();
+      place(0, dir * w, false);
+      const loading = go(k);
+      void appEl.offsetWidth;
+      place(-dir * w, 0, true);
+      await wait(270);
+      dropGhost();
+      await loading;
+    } finally { resetTurn(); }
   }
   $("prevBtn").addEventListener("click", () => turnTo(addDays(state.date, -1), -1));
   $("nextBtn").addEventListener("click", () => turnTo(addDays(state.date, 1), 1));
@@ -1516,7 +1556,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
       if (document.body.classList.contains("writing") || document.body.classList.contains("recording") || turning || e.pointerType === "mouse") return;
       id = e.pointerId; x0 = e.clientX; y0 = e.clientY; t0 = Date.now(); dx = 0; mode = null; dir = 0;
     });
-    area.addEventListener("pointermove", (e) => {
+    const move = (e) => {
       if (e.pointerId !== id) return;
       dx = e.clientX - x0;
       const dy = e.clientY - y0;
@@ -1526,35 +1566,41 @@ body.modal-open::before { background: var(--scrim-on-paper); }
         if (mode !== "swipe") return;
         try { area.setPointerCapture(id); } catch (err) {}
         entry.blur();
-        turning = true;
+        startTurn();
+        dragging = true;
         base = state.date;
         makeGhost();
       }
       if (mode !== "swipe") return;
       const want = dx < 0 ? 1 : -1;
-      if (want !== dir) { dir = want; goTo(addDays(base, dir)); }   // show the day on the side you're pulling toward
+      if (want !== dir) { dir = want; go(addDays(base, dir)); }   // show the day on the side you're pulling toward
       place(dx, dx + dir * pageW(), false);
-    });
+    };
+    window.addEventListener("pointermove", move);
     const end = async (e) => {
       if (e.pointerId !== id) return;
       id = null;
       if (mode !== "swipe") return;
-      const w = pageW();
-      const fast = Math.abs(dx) > 30 && Math.abs(dx) / Math.max(1, Date.now() - t0) > 0.5;
-      if (dir && (Math.abs(dx) > 80 || fast)) {
-        place(-dir * w, 0, true);                       // finish the turn
-        await wait(270);
-        dropGhost();
-      } else {
-        place(0, dir * w, true);                        // spring back to the day you started on
-        await wait(270);
-        if (state.date !== base) await goTo(base);      // re-render underneath the still copy, then reveal it
-        dropGhost();
-      }
-      turning = false;
+      dragging = false;
+      try {
+        const w = pageW();
+        const fast = Math.abs(dx) > 30 && Math.abs(dx) / Math.max(1, Date.now() - t0) > 0.5;
+        if (dir && (Math.abs(dx) > 80 || fast)) {
+          place(-dir * w, 0, true);                       // finish the turn
+          await wait(270);
+          dropGhost();
+          await navChain;
+        } else {
+          place(0, dir * w, true);                        // spring back to the day you started on
+          await wait(270);
+          await go(base);                                 // re-render underneath the still copy, then reveal it
+        }
+      } finally { resetTurn(); }
     };
-    area.addEventListener("pointerup", end);
-    area.addEventListener("pointercancel", end);
+    // Listen on the whole window so the end of a swipe is never missed, wherever the finger lifts.
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    area.addEventListener("lostpointercapture", (e) => { if (e.target === area && e.pointerId === id) end(e); });
     // A swipe shouldn't also count as a tap that opens the keyboard.
     area.addEventListener("click", (e) => { if (mode === "swipe") { e.preventDefault(); e.stopPropagation(); mode = null; } }, true);
   })();
@@ -1849,7 +1895,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     $("resetForm").hidden = !recover;
     $("loginSub").textContent = recover ? "Choose a new password for your journal." : "Sign in to see tonight's moon and your journal.";
     const now = new Date();
-    if (sb) $("versionTag").textContent = `Version 2026-10-26ad · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
+    if (sb) $("versionTag").textContent = `Version 2026-10-26af · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
     $("loginMoon").innerHTML = phaseIcon(SunCalc.getMoonIllumination(now).phase, 112, 3, "hatch");
   }
   function enterApp(session) {
