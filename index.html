@@ -151,7 +151,29 @@ body.writing .journal-scroll { padding-bottom: 32px; }
   bottom: calc(32px + env(safe-area-inset-bottom, 0px));
   display: flex; gap: 8px; align-items: center;
 }
-body.writing .nav { display: none; }
+body.writing .nav, body.recording .nav { display: none; }
+
+/* Empty entry: choose Write or Dictate */
+.compose { display: flex; justify-content: center; gap: 36px; padding: 28px 0 8px; }
+.compose button { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; color: var(--mute); }
+.compose .ring { width: 64px; height: 64px; border: var(--stroke) solid var(--ink); border-radius: 50%; display: grid; place-items: center; background: var(--paper); }
+.compose button:active .ring { transform: scale(0.94); }
+.compose svg { width: 26px; height: 26px; }
+
+/* Dictation */
+.recorder { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 18px 0 8px; }
+.recorder canvas { width: 100%; height: 96px; display: block; }
+.rec-status { font-size: 12px; font-weight: 700; color: var(--mute); margin: 0; }
+.rec-live { margin: 0; align-self: stretch; font-weight: 300; font-size: 14px; line-height: 21px; color: var(--mute); min-height: 21px; white-space: pre-wrap; }
+.rec-bar {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 6;
+  bottom: calc(32px + env(safe-area-inset-bottom, 0px));
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.rec-stop { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 22px; border-radius: var(--radius); background: var(--ink); color: var(--paper); font-weight: 700; font-size: 15px; }
+.rec-stop i { width: 12px; height: 12px; border-radius: 3px; background: var(--paper); display: block; }
+.rec-stop:active { transform: scale(0.96); }
+.rec-stop[disabled] { opacity: 0.6; }
 .today-btn { position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); height: 36px; }
 .nav .today-btn:active { transform: translateX(-50%) scale(0.94); }
 .round {
@@ -312,6 +334,12 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     <symbol id="i-x" viewBox="0 0 24 24">
       <path d="M18 6 6 18M6 6l12 12" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
     </symbol>
+    <symbol id="i-type" viewBox="0 0 24 24">
+      <path d="M4 7V4h16v3M9 20h6M12 4v16" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+    </symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24">
+      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3Z M19 10v2a7 7 0 0 1-14 0v-2 M12 19v4 M8 23h8" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+    </symbol>
     <symbol id="i-trash" viewBox="0 0 24 24">
       <path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" fill="none" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
     </symbol>
@@ -335,7 +363,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
       <button class="save-btn wide-btn" id="resetBtn" type="submit">Save new password</button>
       <p class="form-msg" id="resetMsg" aria-live="polite"></p>
     </form>
-    <p class="version" id="versionTag">Version 2026-10-26u</p>
+    <p class="version" id="versionTag">Version 2026-10-26v</p>
   </div>
 </section>
 
@@ -380,6 +408,15 @@ body.modal-open::before { background: var(--scrim-on-paper); }
       <input type="file" id="fileInput" accept="image/*" multiple hidden>
     </div>
     <div class="journal-scroll" id="journalScroll">
+      <div class="compose" id="compose" hidden>
+        <button type="button" id="writeBtn"><span class="ring"><svg><use href="#i-type"></use></svg></span>Write</button>
+        <button type="button" id="dictateBtn"><span class="ring"><svg><use href="#i-mic"></use></svg></span>Dictate</button>
+      </div>
+      <div class="recorder" id="recorder" hidden>
+        <canvas id="waveCanvas" aria-hidden="true"></canvas>
+        <p class="rec-status" id="recStatus" aria-live="polite">Listening…</p>
+        <p class="rec-live" id="recLive"></p>
+      </div>
       <textarea id="entry" rows="3" placeholder="Tap to start writing..." aria-label="Journal entry"></textarea>
       <div class="photos" id="photos"></div>
     </div>
@@ -392,6 +429,11 @@ body.modal-open::before { background: var(--scrim-on-paper); }
   <button class="round pill today-btn" id="todayBtn" type="button" hidden>Today</button>
   <button class="round" id="nextBtn" aria-label="Next day"><svg style="transform:rotate(180deg)"><use href="#i-arrow"></use></svg></button>
 </nav>
+</div>
+
+<div class="rec-bar" id="recBar" hidden>
+  <button class="rec-stop" id="recStop" type="button"><i></i><span id="recStopLabel">Stop recording</span></button>
+  <button class="link-btn" id="recCancel" type="button">Cancel</button>
 </div>
 
 <div class="overlay" id="calendar" hidden>
@@ -958,6 +1000,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     const token = ++loadToken;
     const k = state.date;
     entry.value = ""; entry.placeholder = "Loading…"; entry.disabled = true;
+    $("compose").hidden = true; entry.hidden = false;
     state.entry = { text: "", photos: [] };
     renderPhotos();
     let e = null, failed = false;
@@ -970,6 +1013,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     entry.placeholder = "Tap to start writing...";
     entry.value = state.entry.text;
     autosize();
+    updateCompose();
     if (failed) showSaved("Couldn't load this day. Check your connection.", true);
     if (useDraft && !failed) scheduleSave();
     const missing = state.entry.photos.filter((p) => !photoUrl[p.id]);
@@ -983,6 +1027,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
   }
 
   async function goTo(k) {
+    if (rec.on) stopDictation(true);
     if (saveTimer) await saveNow();
     entry.blur();
     state.date = k;
@@ -1019,7 +1064,144 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     document.body.classList.remove("writing");
     setTimeout(fitToViewport, 50);
     if (saveTimer) saveNow();
+    updateCompose();
   });
+
+  // ---------- Write or Dictate (shown when the day has no text yet) ----------
+  function updateCompose() {
+    const recording = document.body.classList.contains("recording");
+    const show = !entry.disabled && !entry.value.trim() && document.activeElement !== entry && !recording;
+    $("compose").hidden = !show;
+    entry.hidden = show || recording;
+  }
+  $("writeBtn").addEventListener("click", () => {
+    $("compose").hidden = true;
+    entry.hidden = false;
+    entry.focus();      // still inside the tap, so the keyboard opens
+  });
+  $("dictateBtn").addEventListener("click", () => startDictation());
+
+  // ---------- Dictation ----------
+  // The iPhone's own speech recognition turns speech into text as you talk. When you stop,
+  // Claude (through the clean-dictation function) removes filler words and applies your
+  // spoken corrections without rewording anything.
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const rec = { on: false, stopping: false, finals: "", sessionFinal: "", interim: "", recog: null, level: 0, raf: 0, lastLen: 0, phase: 0 };
+  function recText() { return [rec.finals, rec.sessionFinal, rec.interim].join(" ").replace(/\s+/g, " ").trim(); }
+  function setRecUI(on) {
+    document.body.classList.toggle("recording", on);
+    $("recorder").hidden = !on;
+    $("recBar").hidden = !on;
+    updateCompose();
+  }
+  function newSession() {
+    const r = new SR();
+    r.lang = navigator.language || "en-US";
+    r.continuous = true;
+    r.interimResults = true;
+    r.onresult = (ev) => {
+      let fin = "", inter = "";
+      for (let i = 0; i < ev.results.length; i++) {
+        const t = ev.results[i][0].transcript;
+        if (ev.results[i].isFinal) fin += t + " "; else inter += t;
+      }
+      rec.sessionFinal = fin.trim(); rec.interim = inter.trim();
+      const text = recText();
+      if (text.length !== rec.lastLen) { rec.level = Math.min(1, rec.level + 0.55); rec.lastLen = text.length; }
+      $("recLive").textContent = text;
+    };
+    r.onspeechstart = () => { rec.level = Math.max(rec.level, 0.5); };
+    r.onerror = (ev) => {
+      if (ev.error === "not-allowed" || ev.error === "service-not-allowed" || ev.error === "audio-capture") {
+        stopDictation(true);
+        showSaved(ev.error === "audio-capture" ? "Couldn't use the microphone." : "Dictation isn't allowed. Turn on Siri & Dictation and allow the microphone for Moon Journal.", true);
+      }
+    };
+    r.onend = () => {
+      // iPhone ends a session after a pause; keep listening until you tap Stop.
+      // Keep words that hadn't been marked final yet; iPhone often ends a session without finalizing them.
+      rec.finals = [rec.finals, rec.sessionFinal, rec.interim].join(" ").replace(/\s+/g, " ").trim();
+      rec.sessionFinal = ""; rec.interim = "";
+      if (rec.on && !rec.stopping) { try { rec.recog = newSession(); rec.recog.start(); } catch (e) {} }
+      else if (rec.stopping && rec.done) rec.done();
+    };
+    return r;
+  }
+  function drawWave() {
+    const c = $("waveCanvas"), dpr = window.devicePixelRatio || 1;
+    const w = c.clientWidth, h = c.clientHeight;
+    if (c.width !== w * dpr) { c.width = w * dpr; c.height = h * dpr; }
+    const g = c.getContext("2d");
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    rec.level = Math.max(0.06, rec.level * 0.94);
+    rec.phase += 0.12 + rec.level * 0.2;
+    g.beginPath();
+    for (let x = 0; x <= w; x += 2) {
+      const t = x / w, env = Math.sin(Math.PI * t);                // quiet at the ends, loudest in the middle
+      const y = h / 2 + env * (h * 0.42) * rec.level *
+        (0.6 * Math.sin(t * 14 + rec.phase) + 0.3 * Math.sin(t * 31 - rec.phase * 1.7) + 0.1 * Math.sin(t * 53 + rec.phase * 2.3));
+      x ? g.lineTo(x, y) : g.moveTo(x, y);
+    }
+    g.strokeStyle = "#1a1a1a"; g.lineWidth = 3; g.lineJoin = "round"; g.lineCap = "round";
+    g.stroke();
+    if (rec.on || rec.flatten) rec.raf = requestAnimationFrame(drawWave);
+  }
+  function startDictation() {
+    if (!SR) { showSaved("Dictation isn't available in this browser. On iPhone, turn on Siri & Dictation in Settings.", true); return; }
+    Object.assign(rec, { on: true, stopping: false, finals: "", sessionFinal: "", interim: "", level: 0.3, lastLen: 0, done: null });
+    $("recLive").textContent = "";
+    $("recStatus").textContent = "Listening…";
+    $("recStop").disabled = false; $("recStopLabel").textContent = "Stop recording";
+    setRecUI(true);
+    try { rec.recog = newSession(); rec.recog.start(); }
+    catch (e) { stopDictation(true); showSaved("Couldn't start dictation. Try again.", true); return; }
+    cancelAnimationFrame(rec.raf); rec.raf = requestAnimationFrame(drawWave);
+  }
+  function stopDictation(discard) {
+    rec.on = false;
+    try { rec.recog && rec.recog.abort(); } catch (e) {}
+    cancelAnimationFrame(rec.raf);
+    setRecUI(false);
+    if (discard) return;
+  }
+  // Strip the obvious fillers locally, in case the cleanup service can't be reached.
+  function basicClean(t) {
+    let s = " " + t + " ";
+    s = s.replace(/[\s,]+\b(um+|uh+|uhm+|erm+|er|ah+|hmm+)\b[,.]?/gi, " ");
+    s = s.replace(/\s+/g, " ").trim();
+    return s ? s[0].toUpperCase() + s.slice(1) : s;
+  }
+  async function finishDictation() {
+    if (!rec.on) return;
+    rec.stopping = true;
+    $("recStop").disabled = true; $("recStopLabel").textContent = "Cleaning up…";
+    $("recStatus").textContent = "Cleaning up your words…";
+    // Wait for the last words to come in, then stop listening.
+    await new Promise((resolve) => { rec.done = resolve; try { rec.recog.stop(); } catch (e) { resolve(); } setTimeout(resolve, 2500); });
+    rec.on = false; rec.flatten = true;
+    rec.finals = [rec.finals, rec.sessionFinal, rec.interim].join(" ").trim(); rec.sessionFinal = ""; rec.interim = "";
+    const raw = rec.finals.replace(/\s+/g, " ").trim();
+    let text = basicClean(raw);
+    if (raw) {
+      try {
+        const { data, error } = await sb.functions.invoke("clean-dictation", { body: { text: raw } });
+        if (!error && data && typeof data.text === "string" && data.cleaned) text = data.text.trim();
+      } catch (e) { /* keep the basic cleanup */ }
+    }
+    rec.flatten = false;
+    stopDictation(true);
+    if (!text) { showSaved("Didn't catch anything. Try again.", true); updateCompose(); return; }
+    entry.value = entry.value.trim() ? entry.value.trim() + "\n\n" + text : text;
+    state.entry.text = entry.value;
+    Draft.set(state.date, entry.value);
+    entry.hidden = false; $("compose").hidden = true;
+    autosize();
+    await saveNow(true);
+    entry.focus();        // opens the keyboard where the phone allows it; otherwise tap the text to edit
+  }
+  $("recStop").addEventListener("click", finishDictation);
+  $("recCancel").addEventListener("click", () => { stopDictation(true); updateCompose(); });
   ["click", "keyup"].forEach((ev) => entry.addEventListener(ev, keepCaretVisible));
 
   // Keep the line being typed above the keyboard.
@@ -1063,7 +1245,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
   fitToViewport();
   // Tapping the empty space under the text puts the cursor at the end.
   scroller.addEventListener("click", (e) => {
-    if (e.target !== scroller || entry.disabled) return;
+    if (e.target !== scroller || entry.disabled || entry.hidden) return;
     entry.focus();
     entry.setSelectionRange(entry.value.length, entry.value.length);
   });
@@ -1283,7 +1465,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     const area = $("journal");
     let id = null, x0 = 0, y0 = 0, t0 = 0, dx = 0, mode = null, base = null, dir = 0;
     area.addEventListener("pointerdown", (e) => {
-      if (document.body.classList.contains("writing") || turning || e.pointerType === "mouse") return;
+      if (document.body.classList.contains("writing") || document.body.classList.contains("recording") || turning || e.pointerType === "mouse") return;
       id = e.pointerId; x0 = e.clientX; y0 = e.clientY; t0 = Date.now(); dx = 0; mode = null; dir = 0;
     });
     area.addEventListener("pointermove", (e) => {
@@ -1609,7 +1791,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     $("resetForm").hidden = !recover;
     $("loginSub").textContent = recover ? "Choose a new password for your journal." : "Sign in to see tonight's moon and your journal.";
     const now = new Date();
-    if (sb) $("versionTag").textContent = `Version 2026-10-26u · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
+    if (sb) $("versionTag").textContent = `Version 2026-10-26v · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
     $("loginMoon").innerHTML = phaseIcon(SunCalc.getMoonIllumination(now).phase, 112, 3, "hatch");
   }
   function enterApp(session) {

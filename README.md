@@ -66,3 +66,14 @@ One-time setup:
 4. **SQL Editor**: run the schedule SQL from `.reminder-secrets.txt`.
 5. Push the site, open Moon Journal **from your Home Screen**, tap the calendar → **Reminders** → **Turn on reminders**, and allow notifications.
 6. Optional test: run the `curl` line in `.reminder-secrets.txt`; a "Reminders are working" notification should arrive.
+
+## Dictation
+
+On a day with no entry, tap **Dictate**, talk, then **Stop recording**. The iPhone's own speech recognition turns your voice into text as you speak (Settings → General → Keyboard → Enable Dictation, and allow the microphone for Moon Journal). When you stop, the `clean-dictation` function asks Claude to remove filler words and apply spoken corrections ("scratch that", "new paragraph") without rewording anything, then the text drops into the entry for editing.
+
+One-time setup:
+1. Get a Claude API key at console.anthropic.com (pay-as-you-go; a dictated entry costs a fraction of a cent).
+2. **Edge Functions → Deploy a new function → Via Editor**: name it `clean-dictation`, paste `supabase/functions/clean-dictation/index.ts`, deploy. Leave **Verify JWT on** (only signed-in users can use it).
+3. **Edge Functions → Secrets**: add `ANTHROPIC_API_KEY` with your key.
+
+Without the key, dictation still works: the app removes "um"/"uh" itself and drops in the rest of the transcript as spoken.
