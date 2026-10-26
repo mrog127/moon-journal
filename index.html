@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#edebe3">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
@@ -33,7 +33,8 @@ img { max-width: 100%; }
   color-scheme: light;
 }
 /* The page never scrolls; only the journal text and photos do. */
-html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+html, body { height: 100%; overflow: hidden; overscroll-behavior: none; touch-action: pan-x pan-y; }
+* { touch-action: manipulation; }   /* no double-tap zoom */
 body {
   background: var(--paper);
   color: var(--ink);
@@ -55,7 +56,10 @@ svg { display: block; }
   padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px));   /* room for the day buttons */
 }
 body.writing .app { padding-bottom: 0; }
+body.not-today:not(.writing) .app { padding-bottom: calc(138px + env(safe-area-inset-bottom, 0px)); }   /* room for the Today button */
 .top-area { flex: none; }
+.app.sliding { transition: transform 0.2s ease, opacity 0.2s ease; }
+@media (prefers-reduced-motion: reduce) { .app.sliding { transition: none; } }
 body.writing .top-area { display: none; }
 
 /* Header */
@@ -64,8 +68,10 @@ body.writing .top-area { display: none; }
   font-family: var(--serif); font-weight: 700; font-size: 24px; line-height: 1.25;
   margin: 0; text-align: left; text-wrap: balance;
 }
-.place { display: flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 12px; font-weight: 700; color: var(--mute); }
-.place svg { width: 12px; height: 12px; flex: none; }
+.place {
+  display: inline-block; margin-top: 4px; font-size: 12px; font-weight: 700; color: var(--mute);
+  text-decoration: underline dotted 1.5px; text-underline-offset: 4px; text-align: left; padding: 2px 0;
+}
 .compass {
   position: absolute; z-index: 3;
   top: -13px; right: 0;
@@ -77,7 +83,7 @@ body.writing .top-area { display: none; }
 .compass.dragging #ring, .compass.live #ring { transition: none; }
 
 /* Chart */
-.chart-wrap { position: relative; touch-action: pan-y; user-select: none; -webkit-user-select: none; cursor: ew-resize; }
+.chart-wrap { position: relative; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; cursor: ew-resize; }
 #chart { width: 100%; height: 208px; overflow: visible; }
 .markers { position: relative; height: 48px; margin-top: 8px; }
 .marker {
@@ -89,6 +95,7 @@ body.writing .top-area { display: none; }
 .marker.now { color: var(--now); z-index: 1; pointer-events: none; }
 button.marker { cursor: pointer; }
 button.marker:active { transform: translateX(-50%) scale(0.94); }
+.marker-moon, .marker-moon svg { display: block; width: 16px; height: 16px; }
 .marker small { font-size: 10px; font-weight: 300; letter-spacing: 0; margin-top: -3px; }
 
 /* Journal */
@@ -113,7 +120,7 @@ button.marker:active { transform: translateX(-50%) scale(0.94); }
 body.writing .save-btn { display: block; }
 .journal-scroll {
   position: relative; flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain; margin: 0 -4px; padding: 0 4px 24px;
+  overscroll-behavior: contain; margin: 0 -4px; padding: 0 4px 24px; touch-action: pan-y;
 }
 body.writing .journal-scroll { padding-bottom: 32px; }
 #entry {
@@ -138,6 +145,8 @@ body.writing .journal-scroll { padding-bottom: 32px; }
   display: flex; gap: 8px; align-items: center;
 }
 body.writing .nav { display: none; }
+.today-btn { position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); height: 36px; }
+.nav .today-btn:active { transform: translateX(-50%) scale(0.94); }
 .round {
   height: 40px; min-width: 40px; border: var(--stroke) solid var(--ink); border-radius: var(--radius);
   background: var(--paper); display: grid; place-items: center;
@@ -148,10 +157,16 @@ body.writing .nav { display: none; }
 .round svg { width: 24px; height: 24px; }
 
 /* Calendar sheet */
+/* Overlays start below the status bar, and a paper band always covers the status bar,
+   so the phone never tints the area around the Dynamic Island with the dark overlay. */
 .overlay {
-  position: fixed; inset: 0; z-index: 20; background: var(--scrim);
+  position: fixed; top: env(safe-area-inset-top, 0px); right: 0; bottom: 0; left: 0; z-index: 20; background: var(--scrim);
   display: grid; place-items: center;
-  padding: max(16px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+  padding: 16px max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+body::before {
+  content: ""; position: fixed; top: 0; left: 0; right: 0; height: env(safe-area-inset-top, 0px);
+  background: var(--paper); z-index: 30; pointer-events: none;
 }
 .sheet {
   box-sizing: border-box; width: 100%; max-width: 370px; background: var(--paper);
@@ -228,6 +243,15 @@ body.writing .nav { display: none; }
   font-size: 10px; font-weight: 700; color: var(--mute); background: var(--paper); border-radius: 8px; padding: 2px 0;
 }
 
+/* Location */
+.loc-field { margin-top: 18px; }
+.loc-field input { font-size: 16px; }
+.loc-list { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; max-height: 46vh; overflow-y: auto; }
+.loc-row { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; border: var(--stroke) solid var(--ink); border-radius: 20px; padding: 10px 14px; box-sizing: border-box; }
+.loc-row b { display: block; font-size: 14px; }
+.loc-row small { display: block; font-size: 12px; font-weight: 300; margin-top: 2px; }
+.loc-row .check { margin-left: auto; flex: none; width: 20px; height: 20px; }
+
 /* Reminders */
 .rem-list { display: flex; flex-direction: column; gap: 10px; margin-top: 18px; }
 .rem-row { display: flex; align-items: center; gap: 14px; border: var(--stroke) solid var(--ink); border-radius: 20px; padding: 12px 14px; cursor: pointer; }
@@ -299,7 +323,7 @@ body.writing .nav { display: none; }
       <button class="save-btn wide-btn" id="resetBtn" type="submit">Save new password</button>
       <p class="form-msg" id="resetMsg" aria-live="polite"></p>
     </form>
-    <p class="version" id="versionTag">Version 2026-10-26e</p>
+    <p class="version" id="versionTag">Version 2026-10-26i</p>
   </div>
 </section>
 
@@ -309,7 +333,7 @@ body.writing .nav { display: none; }
   <header class="top">
     <span class="compass-hint" id="compassHint" hidden>Tap compass to turn on</span>
     <h1 class="date" id="dateTitle">Monday,<br>10/26</h1>
-    <p class="place" id="place"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0Z" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"></path><circle cx="12" cy="10" r="3" fill="none" stroke="currentColor" stroke-width="2.5"></circle></svg><span id="placeName">Wellesley, MA</span></p>
+    <button class="place" id="placeBtn" type="button" aria-label="Change location"><span id="placeName">Wellesley, MA</span></button>
     <div class="compass" id="compass" role="img" aria-label="Compass showing the Moon's direction">
       <svg viewBox="0 0 126 126" width="126" height="126">
         <circle cx="63" cy="63" r="63" fill="#edebe3"></circle>
@@ -324,6 +348,7 @@ body.writing .nav { display: none; }
           <textPath id="phaseText" href="#phaseArcPath" startOffset="50%" text-anchor="middle">WAXING GIBBOUS</textPath>
         </text>
         <g id="phaseMoon"></g>
+        <g id="wxIcon"></g>
       </svg>
     </div>
   </header>
@@ -352,6 +377,7 @@ body.writing .nav { display: none; }
 <nav class="nav" aria-label="Change day">
   <button class="round" id="prevBtn" aria-label="Previous day"><svg><use href="#i-arrow"></use></svg></button>
   <button class="round wide" id="calBtn" aria-label="Open calendar"><svg><use href="#i-cal"></use></svg></button>
+  <button class="round pill today-btn" id="todayBtn" type="button" hidden>Today</button>
   <button class="round" id="nextBtn" aria-label="Next day"><svg style="transform:rotate(180deg)"><use href="#i-arrow"></use></svg></button>
 </nav>
 </div>
@@ -396,6 +422,18 @@ body.writing .nav { display: none; }
       <div><dt>Sky</dt><dd id="infoSky">Dark</dd></div>
     </dl>
     <p class="info-note" id="infoNote"></p>
+  </div>
+</div>
+
+<div class="overlay" id="locSheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="locTitle">
+    <div class="sheet-head">
+      <h2 id="locTitle">Location</h2>
+      <button class="round" id="locClose" aria-label="Close"><svg><use href="#i-x"></use></svg></button>
+    </div>
+    <label class="field loc-field">Search<input id="locSearch" type="search" placeholder="Town or ZIP code" autocomplete="off" enterkeyhint="search"></label>
+    <div class="loc-list" id="locList"></div>
+    <p class="info-note" id="locNote"></p>
   </div>
 </div>
 
@@ -650,7 +688,7 @@ body.writing .nav { display: none; }
     $("ringMoon").innerHTML = `
       <g transform="translate(${x - 7} ${y - 7})">
         <rect width="14" height="14" rx="7" fill="#edebe3"></rect>
-        <g transform="translate(1 1)" opacity="${below ? 0.45 : 1}"><path d="M10.5 6.395A4.53 4.53 0 1 1 5.605 1.5 3.52 3.52 0 0 0 10.5 6.395Z" fill="#edebe3" stroke="#1a1a1a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></g>
+        <g transform="translate(1 1)" opacity="${below ? 0.45 : 1}"><path d="M10.5 6.395A4.53 4.53 0 1 1 5.605 1.5 3.52 3.52 0 0 0 10.5 6.395Z" fill="#edebe3" stroke="#2777e7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></g>
       </g>`;
     compass.setAttribute("aria-label", `Moon is ${Math.round(bearing)}° from north and ${Math.round(alt)}° ${below ? "below" : "above"} the horizon`);
   }
@@ -752,8 +790,10 @@ body.writing .nav { display: none; }
 
   function drawMarkers(d, m) {
     const items = [];
-    if (d.day) items.push({ x: xOf(d.day.m), kind: "day", html: `<svg width="16" height="16" style="color:#848484"><use href="#i-moon"></use></svg>${fmtTime(d.day.m)}<small>day</small>`, cls: "" });
-    if (d.night) items.push({ x: xOf(d.night.m), kind: "night", html: `<svg width="16" height="16" style="color:#848484"><use href="#i-moon"></use></svg>${fmtTime(d.night.m)}<small>night</small>`, cls: "" });
+    // Each marker shows the Moon's phase at that time, drawn like the calendar tiles.
+    const phaseAt = (mm) => phaseIcon(SunCalc.getMoonIllumination(atMinutes(state.date, mm)).phase, 16, 1.5);
+    if (d.day) items.push({ x: xOf(d.day.m), kind: "day", html: `<span class="marker-moon">${phaseAt(d.day.m)}</span>${fmtTime(d.day.m)}<small>day</small>`, cls: "" });
+    if (d.night) items.push({ x: xOf(d.night.m), kind: "night", html: `<span class="marker-moon">${phaseAt(d.night.m)}</span>${fmtTime(d.night.m)}<small>night</small>`, cls: "" });
     items.push({ x: xOf(m), html: `<svg width="16" height="16" style="color:#2777e7"><use href="#i-clock"></use></svg>${fmtTime(m)}`, cls: "now" });
     // Keep labels from overlapping: lay out left to right with a minimum gap.
     const GAP = 58;
@@ -788,6 +828,16 @@ body.writing .nav { display: none; }
     drawMarkers(d, m);
     const pos = moonAt(atMinutes(state.date, m));
     drawCompassMoon(pos.bearing, pos.alt);
+    drawCloud(typeof wxAt === "function" ? wxAt(state.date, m) : null);
+  }
+  // A cloud (with rain when it's raining) over the moon when the sky is mostly covered.
+  function drawCloud(w) {
+    const g = $("wxIcon");
+    if (!w || (w.cc < 70 && w.pr <= 0.1)) { g.innerHTML = ""; return; }
+    const shapes = (attrs) => `<circle cx="9" cy="12" r="6" ${attrs}></circle><circle cx="16.5" cy="8" r="7.5" ${attrs}></circle><circle cx="23.5" cy="12.5" r="5.5" ${attrs}></circle><rect x="9" y="11" width="14.5" height="7" ${attrs}></rect>`;
+    const rain = w.pr > 0.1 ? `<path d="M10 22.5 8.5 26.5M16 22.5 14.5 26.5M22 22.5 20.5 26.5" stroke="#1a1a1a" stroke-width="2.2" stroke-linecap="round" fill="none"></path>` : "";
+    g.innerHTML = `<g transform="translate(55 51)">${shapes('fill="#1a1a1a" stroke="#1a1a1a" stroke-width="6"')}${shapes('fill="#edebe3"')}${rain}</g>`;
+    g.setAttribute("aria-label", skyWord(w));
   }
 
   function renderDay() {
@@ -798,33 +848,38 @@ body.writing .nav { display: none; }
     drawChart(d);
     drawPhase(d);
     updateLive();
+    const isToday = state.date === keyOf(new Date());
+    $("todayBtn").hidden = isToday;
+    document.body.classList.toggle("not-today", !isToday);
   }
 
   // Scrubbing the time line
   (function scrub() {
-    let active = false, startX = 0, startY = 0, decided = false;
+    // The page doesn't scroll, so the chart takes every touch: press and drag to move the time line,
+    // let go and it snaps back to now.
+    let pid = null, moved = false, startX = 0, release = null;
+    const show = (x) => { state.scrub = mOf(x); updateLive(); };
     chartWrap.addEventListener("pointerdown", (e) => {
       if (e.target.closest("button.marker")) return;
-      active = true; decided = e.pointerType === "mouse"; startX = e.clientX; startY = e.clientY;
-      if (decided) { chartWrap.setPointerCapture(e.pointerId); state.scrub = mOf(e.clientX); updateLive(); }
+      clearTimeout(release);
+      pid = e.pointerId; moved = false; startX = e.clientX;
+      try { chartWrap.setPointerCapture(pid); } catch (err) {}
+      e.preventDefault();
+      show(e.clientX);
     });
     chartWrap.addEventListener("pointermove", (e) => {
-      if (!active) return;
-      if (!decided) {
-        const dx = Math.abs(e.clientX - startX), dy = Math.abs(e.clientY - startY);
-        if (dx < 4 && dy < 4) return;
-        if (dy > dx) { active = false; return; }      // vertical swipe scrolls the page
-        decided = true; chartWrap.setPointerCapture(e.pointerId);
-      }
-      state.scrub = mOf(e.clientX); updateLive();
+      if (e.pointerId !== pid) return;
+      if (Math.abs(e.clientX - startX) > 3) moved = true;
+      show(e.clientX);
     });
-    const end = () => { if (!active) return; active = false; state.scrub = null; updateLive(); };
-    chartWrap.addEventListener("pointerup", (e) => {
-      if (active && !decided) { state.scrub = mOf(e.clientX); updateLive(); setTimeout(() => { state.scrub = null; updateLive(); }, 900); active = false; return; }
-      end();
-    });
-    chartWrap.addEventListener("pointercancel", end);
-    chartWrap.addEventListener("lostpointercapture", end);
+    const finish = (e) => {
+      if (pid === null || (e && e.pointerId !== pid)) return;
+      pid = null;
+      // A quick tap leaves the line there for a moment so you can read it.
+      release = setTimeout(() => { state.scrub = null; updateLive(); }, moved ? 0 : 1200);
+    };
+    chartWrap.addEventListener("pointerup", finish);
+    chartWrap.addEventListener("pointercancel", finish);
   })();
 
   // ---------- Journal ----------
@@ -1080,12 +1135,15 @@ body.writing .nav { display: none; }
     $("infoDir").innerHTML = `${Math.round(s.bearing)}°<small>${cardinal(s.bearing)} from the house</small>`;
     $("infoAlt").innerHTML = s.alt >= 0 ? `${Math.round(s.alt)}°<small>above the horizon</small>` : `${Math.round(-s.alt)}°<small>below the horizon</small>`;
     $("infoSky").innerHTML = kind === "day" ? `Daylight<small>Sun ${Math.round(s.sunAlt)}° up</small>` : (s.sunAlt < -12 ? `Dark<small>full night</small>` : `Twilight<small>sky still glowing</small>`);
+    const w = wxAt(state.date, s.m);
+    if (w) $("infoSky").innerHTML = `${skyWord(w)}<small>${Math.round(w.cc)}% cloud cover</small>`;
     let note = "";
     if (s.alt < 0) note = kind === "day" ? "The Moon stays below the horizon all day. This is when it comes closest." : "The Moon stays below the horizon after dark. This is when it comes closest.";
     else if (s.alt < 10) note = "It's low in the sky, so trees and houses may block it. Try an open spot facing " + cardinal(s.bearing) + ".";
     else if (kind === "day" && s.elong < 25) note = "It's close to the Sun, so it will be hard to pick out. Shade your eyes from the Sun.";
     else if (s.frac < 0.08) note = "Only a thin sliver is lit, so it will be faint.";
     else if (kind === "night" && s.m < 720) note = "The Moon isn't up during the evening, so the best view is before sunrise.";
+    if (w && (w.cc >= 70 || w.pr > 0.1)) note = (w.pr > 0.1 ? "Rain is expected then, " : "Clouds are expected then, ") + "so the Moon may be hidden. " + note;
     $("infoNote").textContent = note;
     const a = s.bearing * RAD, R2 = 30, mx = 38 + R2 * Math.sin(a), my = 38 - R2 * Math.cos(a);
     $("infoDial").innerHTML = `
@@ -1154,12 +1212,83 @@ body.writing .nav { display: none; }
     if (!$("viewer").hidden) closeViewer();
     else if (!$("moonInfo").hidden) closeInfo();
     else if (!$("reminders").hidden) $("reminders").hidden = true;
+    else if (!$("locSheet").hidden) $("locSheet").hidden = true;
     else if (!$("calendar").hidden) closeCalendar();
   });
 
   // ---------- Day navigation ----------
-  $("prevBtn").addEventListener("click", () => goTo(addDays(state.date, -1)));
-  $("nextBtn").addEventListener("click", () => goTo(addDays(state.date, 1)));
+  // Page turn: the current day slides out, the new day slides in from the other side.
+  const appEl = document.querySelector(".app");
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  let turning = false;
+  async function turnTo(k, dir) {            // dir: +1 = forward (slides left), -1 = back (slides right)
+    if (turning || k === state.date) return;
+    turning = true;
+    const w = appEl.getBoundingClientRect().width;
+    appEl.classList.add("sliding");
+    appEl.style.transform = `translateX(${-dir * w}px)`;
+    appEl.style.opacity = "0";
+    await wait(200);
+    appEl.classList.remove("sliding");
+    appEl.style.transform = `translateX(${dir * w}px)`;
+    await goTo(k);
+    void appEl.offsetWidth;
+    appEl.classList.add("sliding");
+    appEl.style.transform = "";
+    appEl.style.opacity = "";
+    await wait(200);
+    appEl.classList.remove("sliding");
+    turning = false;
+  }
+  $("prevBtn").addEventListener("click", () => turnTo(addDays(state.date, -1), -1));
+  $("nextBtn").addEventListener("click", () => turnTo(addDays(state.date, 1), 1));
+  $("todayBtn").addEventListener("click", () => { const t = keyOf(new Date()); turnTo(t, t > state.date ? 1 : -1); });
+
+  // Swipe left/right over the journal to change days; the page follows your finger.
+  (function swipe() {
+    const area = $("journal");
+    let id = null, x0 = 0, y0 = 0, t0 = 0, dx = 0, mode = null;
+    area.addEventListener("pointerdown", (e) => {
+      if (document.body.classList.contains("writing") || turning || e.pointerType === "mouse") return;
+      id = e.pointerId; x0 = e.clientX; y0 = e.clientY; t0 = Date.now(); dx = 0; mode = null;
+    });
+    area.addEventListener("pointermove", (e) => {
+      if (e.pointerId !== id) return;
+      dx = e.clientX - x0;
+      const dy = e.clientY - y0;
+      if (!mode) {
+        if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+        mode = Math.abs(dx) > Math.abs(dy) * 1.2 ? "swipe" : "scroll";
+        if (mode === "swipe") { try { area.setPointerCapture(id); } catch (err) {} entry.blur(); }
+      }
+      if (mode === "swipe") { appEl.style.transform = `translateX(${dx}px)`; appEl.style.opacity = String(1 - Math.min(0.6, Math.abs(dx) / 600)); }
+    });
+    const end = async (e) => {
+      if (e.pointerId !== id) return;
+      id = null;
+      if (mode !== "swipe") return;
+      const fast = Math.abs(dx) > 30 && Math.abs(dx) / Math.max(1, Date.now() - t0) > 0.5;
+      if (Math.abs(dx) > 80 || fast) {
+        const dir = dx < 0 ? 1 : -1;
+        await turnTo(addDays(state.date, dir), dir);
+      } else {
+        appEl.classList.add("sliding");
+        appEl.style.transform = ""; appEl.style.opacity = "";
+        setTimeout(() => appEl.classList.remove("sliding"), 200);
+      }
+    };
+    area.addEventListener("pointerup", end);
+    area.addEventListener("pointercancel", (e) => {
+      if (e.pointerId === id && mode === "swipe") { appEl.style.transform = ""; appEl.style.opacity = ""; }
+      if (e.pointerId === id) id = null;
+    });
+    // A swipe shouldn't also count as a tap that opens the keyboard.
+    area.addEventListener("click", (e) => { if (mode === "swipe") { e.preventDefault(); e.stopPropagation(); mode = null; } }, true);
+  })();
+
+  // Block pinch-zoom (iPhone ignores the page's zoom setting for pinches).
+  ["gesturestart", "gesturechange", "gestureend"].forEach((ev) => document.addEventListener(ev, (e) => e.preventDefault(), { passive: false }));
+  document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
 
   // ---------- Boot ----------
   // ---------- Location ----------
@@ -1184,20 +1313,109 @@ body.writing .nav { display: none; }
       return (placeCache[key] = label || null);
     } catch (e) { return null; }
   }
+  // A town picked by hand is remembered on this phone; "Current location" clears it.
+  const LOC_KEY = "moon-journal-location";
+  const savedLoc = () => { try { return JSON.parse(localStorage.getItem(LOC_KEY) || "null"); } catch (e) { return null; } };
   function locate() {
-    if (!navigator.geolocation) return;
+    const manual = savedLoc();
+    if (manual && manual.lat != null) { useLocation({ ...manual, source: "manual" }); refreshWeather(); return; }
+    if (!navigator.geolocation) { useLocation(DEFAULT_LOC); refreshWeather(); return; }
     try {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           const lat = Math.round(pos.coords.latitude * 100) / 100, lng = Math.round(pos.coords.longitude * 100) / 100;
           useLocation({ lat, lng, label: LOC.source === "device" ? LOC.label : "Current location", source: "device" });
           placeName(lat, lng).then((label) => { if (label && LOC.lat === lat && LOC.lng === lng) { LOC = { ...LOC, label }; $("placeName").textContent = label; } });
+          refreshWeather();
         },
-        () => useLocation(DEFAULT_LOC),
+        () => { useLocation(DEFAULT_LOC); refreshWeather(); },
         { enableHighAccuracy: false, timeout: 10000, maximumAge: 30 * 60 * 1000 });
     } catch (e) { useLocation(DEFAULT_LOC); }
   }
   document.addEventListener("visibilitychange", () => { if (!document.hidden) locate(); });
+
+  const STATES = { Alabama: "AL", Alaska: "AK", Arizona: "AZ", Arkansas: "AR", California: "CA", Colorado: "CO", Connecticut: "CT", Delaware: "DE", "District of Columbia": "DC", Florida: "FL", Georgia: "GA", Hawaii: "HI", Idaho: "ID", Illinois: "IL", Indiana: "IN", Iowa: "IA", Kansas: "KS", Kentucky: "KY", Louisiana: "LA", Maine: "ME", Maryland: "MD", Massachusetts: "MA", Michigan: "MI", Minnesota: "MN", Mississippi: "MS", Missouri: "MO", Montana: "MT", Nebraska: "NE", Nevada: "NV", "New Hampshire": "NH", "New Jersey": "NJ", "New Mexico": "NM", "New York": "NY", "North Carolina": "NC", "North Dakota": "ND", Ohio: "OH", Oklahoma: "OK", Oregon: "OR", Pennsylvania: "PA", "Rhode Island": "RI", "South Carolina": "SC", "South Dakota": "SD", Tennessee: "TN", Texas: "TX", Utah: "UT", Vermont: "VT", Virginia: "VA", Washington: "WA", "West Virginia": "WV", Wisconsin: "WI", Wyoming: "WY", "Puerto Rico": "PR" };
+  const checkSvg = '<svg class="check" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5" fill="none" stroke="#1a1a1a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+  let locResults = [], locTimer = null, locToken = 0;
+  function renderLocList() {
+    const manual = savedLoc();
+    const current = `<button class="loc-row" data-i="current" type="button"><span><b>Current location</b><small>${!manual && LOC.source === "device" ? LOC.label.replace(/</g, "&lt;") : "Use this phone's location"}</small></span>${!manual ? checkSvg : ""}</button>`;
+    const rows = locResults.map((r, i) => `<button class="loc-row" data-i="${i}" type="button"><span><b>${r.label.replace(/</g, "&lt;")}</b><small>${r.detail.replace(/</g, "&lt;")}</small></span>${manual && manual.label === r.label ? checkSvg : ""}</button>`);
+    if (manual && !locResults.some((r) => r.label === manual.label)) rows.unshift(`<button class="loc-row" data-i="saved" type="button"><span><b>${manual.label.replace(/</g, "&lt;")}</b><small>Chosen location</small></span>${checkSvg}</button>`);
+    $("locList").innerHTML = current + rows.join("");
+  }
+  async function searchPlaces(q) {
+    const token = ++locToken;
+    if (q.length < 2) { locResults = []; $("locNote").textContent = ""; renderLocList(); return; }
+    try {
+      const r = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=8&language=en&format=json`);
+      const j = await r.json();
+      if (token !== locToken) return;
+      const zip = /^\d{5}$/.test(q) ? q : null;
+      locResults = (j.results || []).map((p) => {
+        const st = p.country_code === "US" ? (STATES[p.admin1] || p.admin1) : null;
+        const label = (st ? `${p.name}, ${st}` : `${p.name}, ${p.country}`) + (zip ? ` ${zip}` : "");
+        const detail = [p.admin2, p.admin1, p.country_code === "US" ? null : p.country].filter(Boolean).join(", ");
+        return { label, detail: detail || p.country || "", lat: Math.round(p.latitude * 100) / 100, lng: Math.round(p.longitude * 100) / 100 };
+      });
+      locResults = locResults.filter((r, i, a) => a.findIndex((x) => x.label === r.label) === i);   // one row per town
+      $("locNote").textContent = locResults.length ? "" : "No places found. Try a town name or a 5-digit ZIP code.";
+    } catch (e) {
+      if (token === locToken) $("locNote").textContent = "Couldn't search right now. Check your connection.";
+      locResults = [];
+    }
+    renderLocList();
+  }
+  $("placeBtn").addEventListener("click", () => {
+    $("locSearch").value = ""; locResults = []; $("locNote").textContent = "";
+    renderLocList();
+    $("locSheet").hidden = false;
+    setTimeout(() => $("locSearch").focus(), 50);
+  });
+  $("locClose").addEventListener("click", () => { $("locSheet").hidden = true; });
+  $("locSheet").addEventListener("click", (e) => { if (e.target === $("locSheet")) $("locSheet").hidden = true; });
+  $("locSearch").addEventListener("input", () => { clearTimeout(locTimer); locTimer = setTimeout(() => searchPlaces($("locSearch").value.trim()), 300); });
+  $("locSearch").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); clearTimeout(locTimer); searchPlaces($("locSearch").value.trim()); } });
+  $("locList").addEventListener("click", (e) => {
+    const b = e.target.closest(".loc-row");
+    if (!b) return;
+    const i = b.dataset.i;
+    $("locSheet").hidden = true;
+    if (i === "current") {
+      try { localStorage.removeItem(LOC_KEY); } catch (err) {}
+      LOC = { ...LOC, source: "default" };
+      locate();
+    } else if (i !== "saved") {
+      const r = locResults[+i];
+      const loc = { lat: r.lat, lng: r.lng, label: r.label, source: "manual" };
+      try { localStorage.setItem(LOC_KEY, JSON.stringify(loc)); } catch (err) {}
+      useLocation(loc);
+      syncSubscription();
+      refreshWeather();
+    }
+  });
+
+  // ---------- Weather (clouds over the moon) ----------
+  // Hourly cloud cover and rain for the chosen place, about a month back and a week ahead.
+  const wx = { key: null, at: 0, hours: new Map() };
+  async function refreshWeather() {
+    const key = LOC.lat + "," + LOC.lng;
+    if (wx.key === key && Date.now() - wx.at < 30 * 60 * 1000) return;
+    try {
+      const r = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${LOC.lat}&longitude=${LOC.lng}&hourly=cloud_cover,precipitation&past_days=31&forecast_days=7&timezone=auto`);
+      const j = await r.json();
+      const hours = new Map();
+      j.hourly.time.forEach((t, i) => hours.set(t, { cc: j.hourly.cloud_cover[i], pr: j.hourly.precipitation[i] }));
+      Object.assign(wx, { key, at: Date.now(), hours });
+      updateLive();
+    } catch (e) { /* no clouds shown without data */ }
+  }
+  function wxAt(dateKey, minutes) {
+    if (wx.key !== LOC.lat + "," + LOC.lng) return null;
+    return wx.hours.get(`${dateKey}T${pad(Math.min(23, Math.floor(minutes / 60)))}:00`) || null;
+  }
+  const skyWord = (w) => (w.pr > 0.1 ? "Rain" : w.cc >= 70 ? "Cloudy" : w.cc >= 30 ? "Partly cloudy" : "Clear");
+  setInterval(refreshWeather, 30 * 60 * 1000);
 
   let booted = false;
   function boot() {
@@ -1326,6 +1544,17 @@ body.writing .nav { display: none; }
     if (open === "day" || open === "night") openInfo(open);
   }
 
+  // ---------- Status bar color ----------
+  // iPhone sometimes keeps an old status-bar tint after an overlay closes; re-setting the theme color refreshes it.
+  const themeMeta = document.querySelector('meta[name="theme-color"]');
+  function refreshStatusBar() {
+    if (!themeMeta) return;
+    themeMeta.setAttribute("content", "#edebe4");
+    requestAnimationFrame(() => themeMeta.setAttribute("content", "#edebe3"));
+  }
+  const overlayWatch = new MutationObserver(refreshStatusBar);
+  document.querySelectorAll(".overlay").forEach((o) => overlayWatch.observe(o, { attributes: true, attributeFilter: ["hidden"] }));
+
   // ---------- Sign-in ----------
   const loginMsg = (el, text, error) => { el.textContent = text; el.classList.toggle("error", !!error); };
   function showLogin(mode) {
@@ -1336,7 +1565,7 @@ body.writing .nav { display: none; }
     $("resetForm").hidden = !recover;
     $("loginSub").textContent = recover ? "Choose a new password for your journal." : "Sign in to see tonight's moon and your journal.";
     const now = new Date();
-    if (sb) $("versionTag").textContent = `Version 2026-10-26e · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
+    if (sb) $("versionTag").textContent = `Version 2026-10-26i · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
     $("loginMoon").innerHTML = phaseIcon(SunCalc.getMoonIllumination(now).phase, 112, 3, "hatch");
   }
   function enterApp(session) {
