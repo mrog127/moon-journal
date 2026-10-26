@@ -58,7 +58,9 @@ svg { display: block; }
 body.writing .app { padding-bottom: 0; }
 body.not-today:not(.writing) .app { padding-bottom: calc(138px + env(safe-area-inset-bottom, 0px)); }   /* room for the Today button */
 .top-area { flex: none; }
-.app.sliding { transition: transform 0.2s ease, opacity 0.2s ease; }
+.app.sliding { transition: transform 0.26s cubic-bezier(0.2, 0.7, 0.2, 1); }
+.app { background: var(--paper); }
+.app.ghost { pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .app.sliding { transition: none; } }
 body.writing .top-area { display: none; }
 
@@ -70,7 +72,7 @@ body.writing .top-area { display: none; }
 }
 .place {
   display: inline-block; margin-top: 4px; font-size: 12px; font-weight: 700; color: var(--mute);
-  text-decoration: underline dotted 1.5px; text-underline-offset: 4px; text-align: left; padding: 2px 0;
+  text-align: left; padding: 2px 0;
 }
 .compass {
   position: absolute; z-index: 3;
@@ -160,7 +162,7 @@ body.writing .nav { display: none; }
 /* Overlays start below the status bar, and a paper band always covers the status bar,
    so the phone never tints the area around the Dynamic Island with the dark overlay. */
 .overlay {
-  position: fixed; top: env(safe-area-inset-top, 0px); right: 0; bottom: 0; left: 0; z-index: 20; background: var(--scrim);
+  position: fixed; top: env(safe-area-inset-top, 0px); right: 0; bottom: 0; left: 0; z-index: 20; background: transparent;
   display: grid; place-items: center;
   padding: 16px max(16px, env(safe-area-inset-right, 0px)) max(16px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
 }
@@ -172,6 +174,7 @@ body::before {
   box-sizing: border-box; width: 100%; max-width: 370px; background: var(--paper);
   border: var(--stroke) solid var(--ink); border-radius: var(--radius);
   padding: 22px 18px 18px;
+  box-shadow: 0 0 0 200vmax var(--scrim);   /* dims the page without a dark background the phone could copy into the status bar */
 }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px; }
 .sheet-head h2 { font-family: var(--serif); font-weight: 700; font-size: 18px; margin: 0; text-align: center; }
@@ -323,7 +326,7 @@ body::before {
       <button class="save-btn wide-btn" id="resetBtn" type="submit">Save new password</button>
       <p class="form-msg" id="resetMsg" aria-live="polite"></p>
     </form>
-    <p class="version" id="versionTag">Version 2026-10-26i</p>
+    <p class="version" id="versionTag">Version 2026-10-26l</p>
   </div>
 </section>
 
@@ -688,7 +691,7 @@ body::before {
     $("ringMoon").innerHTML = `
       <g transform="translate(${x - 7} ${y - 7})">
         <rect width="14" height="14" rx="7" fill="#edebe3"></rect>
-        <g transform="translate(1 1)" opacity="${below ? 0.45 : 1}"><path d="M10.5 6.395A4.53 4.53 0 1 1 5.605 1.5 3.52 3.52 0 0 0 10.5 6.395Z" fill="#edebe3" stroke="#2777e7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></g>
+        <g transform="translate(1 1)"><path d="M10.5 6.395A4.53 4.53 0 1 1 5.605 1.5 3.52 3.52 0 0 0 10.5 6.395Z" fill="#edebe3" stroke="#2777e7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></g>
       </g>`;
     compass.setAttribute("aria-label", `Moon is ${Math.round(bearing)}° from north and ${Math.round(alt)}° ${below ? "below" : "above"} the horizon`);
   }
@@ -836,7 +839,7 @@ body::before {
     if (!w || (w.cc < 70 && w.pr <= 0.1)) { g.innerHTML = ""; return; }
     const shapes = (attrs) => `<circle cx="9" cy="12" r="6" ${attrs}></circle><circle cx="16.5" cy="8" r="7.5" ${attrs}></circle><circle cx="23.5" cy="12.5" r="5.5" ${attrs}></circle><rect x="9" y="11" width="14.5" height="7" ${attrs}></rect>`;
     const rain = w.pr > 0.1 ? `<path d="M10 22.5 8.5 26.5M16 22.5 14.5 26.5M22 22.5 20.5 26.5" stroke="#1a1a1a" stroke-width="2.2" stroke-linecap="round" fill="none"></path>` : "";
-    g.innerHTML = `<g transform="translate(55 51)">${shapes('fill="#1a1a1a" stroke="#1a1a1a" stroke-width="6"')}${shapes('fill="#edebe3"')}${rain}</g>`;
+    g.innerHTML = `<g transform="translate(63 43)">${shapes('fill="#1a1a1a" stroke="#1a1a1a" stroke-width="6"')}${shapes('fill="#edebe3"')}${rain}</g>`;
     g.setAttribute("aria-label", skyWord(w));
   }
 
@@ -1217,40 +1220,59 @@ body::before {
   });
 
   // ---------- Day navigation ----------
-  // Page turn: the current day slides out, the new day slides in from the other side.
+  // Page turns. The two days sit side by side like two screen widths: a still copy of the
+  // current day (the "ghost") moves out while the real page, already showing the new day, follows right behind it.
   const appEl = document.querySelector(".app");
   const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-  let turning = false;
-  async function turnTo(k, dir) {            // dir: +1 = forward (slides left), -1 = back (slides right)
+  const pageW = () => appEl.getBoundingClientRect().width + 24;
+  let turning = false, ghost = null;
+  function makeGhost() {
+    ghost = appEl.cloneNode(true);
+    ghost.classList.add("ghost");
+    ghost.setAttribute("aria-hidden", "true");
+    // The copy keeps its ids so it's styled the same; it sits after the real page, so lookups still find the real one.
+    const t = ghost.querySelector("textarea");
+    if (t) t.value = entry.value;
+    const sc = ghost.querySelector(".journal-scroll");
+    if (sc) requestAnimationFrame(() => { sc.scrollTop = scroller.scrollTop; });
+    appEl.after(ghost);
+  }
+  function place(gx, ax, animate) {
+    [ghost, appEl].forEach((el) => el && el.classList.toggle("sliding", !!animate));
+    if (ghost) ghost.style.transform = `translateX(${gx}px)`;
+    appEl.style.transform = ax ? `translateX(${ax}px)` : "";
+  }
+  function dropGhost() {
+    if (ghost) ghost.remove();
+    ghost = null;
+    appEl.classList.remove("sliding");
+    appEl.style.transform = "";
+  }
+  async function turnTo(k, dir) {            // dir: +1 = forward (pages move left), -1 = back
     if (turning || k === state.date) return;
     turning = true;
-    const w = appEl.getBoundingClientRect().width;
-    appEl.classList.add("sliding");
-    appEl.style.transform = `translateX(${-dir * w}px)`;
-    appEl.style.opacity = "0";
-    await wait(200);
-    appEl.classList.remove("sliding");
-    appEl.style.transform = `translateX(${dir * w}px)`;
-    await goTo(k);
+    const w = pageW();
+    makeGhost();
+    place(0, dir * w, false);
+    const loading = goTo(k);
     void appEl.offsetWidth;
-    appEl.classList.add("sliding");
-    appEl.style.transform = "";
-    appEl.style.opacity = "";
-    await wait(200);
-    appEl.classList.remove("sliding");
+    place(-dir * w, 0, true);
+    await wait(270);
+    dropGhost();
+    await loading;
     turning = false;
   }
   $("prevBtn").addEventListener("click", () => turnTo(addDays(state.date, -1), -1));
   $("nextBtn").addEventListener("click", () => turnTo(addDays(state.date, 1), 1));
   $("todayBtn").addEventListener("click", () => { const t = keyOf(new Date()); turnTo(t, t > state.date ? 1 : -1); });
 
-  // Swipe left/right over the journal to change days; the page follows your finger.
+  // Swipe left/right over the journal: both days follow your finger, side by side.
   (function swipe() {
     const area = $("journal");
-    let id = null, x0 = 0, y0 = 0, t0 = 0, dx = 0, mode = null;
+    let id = null, x0 = 0, y0 = 0, t0 = 0, dx = 0, mode = null, base = null, dir = 0;
     area.addEventListener("pointerdown", (e) => {
       if (document.body.classList.contains("writing") || turning || e.pointerType === "mouse") return;
-      id = e.pointerId; x0 = e.clientX; y0 = e.clientY; t0 = Date.now(); dx = 0; mode = null;
+      id = e.pointerId; x0 = e.clientX; y0 = e.clientY; t0 = Date.now(); dx = 0; mode = null; dir = 0;
     });
     area.addEventListener("pointermove", (e) => {
       if (e.pointerId !== id) return;
@@ -1259,29 +1281,38 @@ body::before {
       if (!mode) {
         if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
         mode = Math.abs(dx) > Math.abs(dy) * 1.2 ? "swipe" : "scroll";
-        if (mode === "swipe") { try { area.setPointerCapture(id); } catch (err) {} entry.blur(); }
+        if (mode !== "swipe") return;
+        try { area.setPointerCapture(id); } catch (err) {}
+        entry.blur();
+        turning = true;
+        base = state.date;
+        makeGhost();
       }
-      if (mode === "swipe") { appEl.style.transform = `translateX(${dx}px)`; appEl.style.opacity = String(1 - Math.min(0.6, Math.abs(dx) / 600)); }
+      if (mode !== "swipe") return;
+      const want = dx < 0 ? 1 : -1;
+      if (want !== dir) { dir = want; goTo(addDays(base, dir)); }   // show the day on the side you're pulling toward
+      place(dx, dx + dir * pageW(), false);
     });
     const end = async (e) => {
       if (e.pointerId !== id) return;
       id = null;
       if (mode !== "swipe") return;
+      const w = pageW();
       const fast = Math.abs(dx) > 30 && Math.abs(dx) / Math.max(1, Date.now() - t0) > 0.5;
-      if (Math.abs(dx) > 80 || fast) {
-        const dir = dx < 0 ? 1 : -1;
-        await turnTo(addDays(state.date, dir), dir);
+      if (dir && (Math.abs(dx) > 80 || fast)) {
+        place(-dir * w, 0, true);                       // finish the turn
+        await wait(270);
+        dropGhost();
       } else {
-        appEl.classList.add("sliding");
-        appEl.style.transform = ""; appEl.style.opacity = "";
-        setTimeout(() => appEl.classList.remove("sliding"), 200);
+        place(0, dir * w, true);                        // spring back to the day you started on
+        await wait(270);
+        if (state.date !== base) await goTo(base);      // re-render underneath the still copy, then reveal it
+        dropGhost();
       }
+      turning = false;
     };
     area.addEventListener("pointerup", end);
-    area.addEventListener("pointercancel", (e) => {
-      if (e.pointerId === id && mode === "swipe") { appEl.style.transform = ""; appEl.style.opacity = ""; }
-      if (e.pointerId === id) id = null;
-    });
+    area.addEventListener("pointercancel", end);
     // A swipe shouldn't also count as a tap that opens the keyboard.
     area.addEventListener("click", (e) => { if (mode === "swipe") { e.preventDefault(); e.stopPropagation(); mode = null; } }, true);
   })();
@@ -1565,7 +1596,7 @@ body::before {
     $("resetForm").hidden = !recover;
     $("loginSub").textContent = recover ? "Choose a new password for your journal." : "Sign in to see tonight's moon and your journal.";
     const now = new Date();
-    if (sb) $("versionTag").textContent = `Version 2026-10-26i · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
+    if (sb) $("versionTag").textContent = `Version 2026-10-26l · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
     $("loginMoon").innerHTML = phaseIcon(SunCalc.getMoonIllumination(now).phase, 112, 3, "hatch");
   }
   function enterApp(session) {
