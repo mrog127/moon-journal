@@ -300,6 +300,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
 .rem-row input:checked + .switch::after { background: var(--paper); transform: translateX(18px); }
 .rem-row input:focus-visible + .switch { outline: 2px solid var(--now); outline-offset: 2px; }
 .rem-list.off .rem-row { opacity: 0.45; pointer-events: none; }
+.exp-intro { margin: 14px 0 16px; font-size: 13px; font-weight: 300; line-height: 1.5; }
 .rem-actions { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 16px; }
 
 @media (prefers-reduced-motion: reduce) { #ring, #ringMoon .upright { transition: none; } }
@@ -365,7 +366,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
       <button class="save-btn wide-btn" id="resetBtn" type="submit">Save new password</button>
       <p class="form-msg" id="resetMsg" aria-live="polite"></p>
     </form>
-    <p class="version" id="versionTag">Version 2026-10-26af</p>
+    <p class="version" id="versionTag">Version 2026-11-25a</p>
   </div>
 </section>
 
@@ -449,7 +450,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     <div class="weekdays"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
     <div class="days" id="calDays"></div>
     <div class="sheet-foot">
-      <span class="legend"><i></i> Journal saved</span>
+      <button class="round pill" id="exportBtn" type="button">Export</button>
       <div style="display:flex;gap:8px">
         <button class="round pill" id="calToday">Today</button>
         <button class="round" id="calClose" aria-label="Close calendar"><svg><use href="#i-x"></use></svg></button>
@@ -491,6 +492,22 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     <label class="field loc-field">Search<input id="locSearch" type="search" placeholder="Town or ZIP code" autocomplete="off" enterkeyhint="search"></label>
     <div class="loc-list" id="locList"></div>
     <p class="info-note" id="locNote"></p>
+  </div>
+</div>
+
+<div class="overlay" id="exportSheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="expTitle">
+    <div class="sheet-head">
+      <h2 id="expTitle">Export journal</h2>
+      <button class="round" id="expClose" aria-label="Close"><svg><use href="#i-x"></use></svg></button>
+    </div>
+    <p class="exp-intro">A Word document with every day you've written, oldest first: the date, your entry, then that day's photos. It opens in Word, Google Docs and Pages.</p>
+    <label class="field">Email it to<input id="expEmail" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="you@example.com" enterkeyhint="send"></label>
+    <p class="info-note" id="expNote"></p>
+    <div class="rem-actions">
+      <button class="save-btn wide-btn" id="expSend" type="button">Send</button>
+      <button class="link-btn" id="expSave" type="button">Save to this phone instead</button>
+    </div>
   </div>
 </div>
 
@@ -1471,6 +1488,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     if (!$("viewer").hidden) closeViewer();
     else if (!$("moonInfo").hidden) closeInfo();
     else if (!$("reminders").hidden) $("reminders").hidden = true;
+    else if (!$("exportSheet").hidden) closeExport();
     else if (!$("locSheet").hidden) $("locSheet").hidden = true;
     else if (!$("calendar").hidden) closeCalendar();
   });
@@ -1817,6 +1835,191 @@ body.modal-open::before { background: var(--scrim-on-paper); }
       remNote("");
     }
   }
+  // ---------- Export: every saved day in one Word document, emailed or saved to the phone ----------
+  const DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  let docxLoading = null, exportBusy = false, built = null;   // built = { blob, filename, days, photos, at }
+  const expNote = (t) => { $("expNote").textContent = t || ""; };
+  function loadDocx() {
+    if (window.docx) return Promise.resolve(window.docx);
+    if (!docxLoading) docxLoading = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://cdn.jsdelivr.net/npm/docx@9.5.1/dist/index.iife.js";
+      s.onload = () => resolve(window.docx);
+      s.onerror = () => { docxLoading = null; s.remove(); reject(new Error("Couldn't load the document maker. Check your connection.")); };
+      document.head.appendChild(s);
+    });
+    return docxLoading;
+  }
+  const longDate = (k) => fromKey(k).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  async function allEntries() {
+    const out = [];
+    for (let from = 0; ; from += 500) {
+      const rows = must(await sb.from("entries").select("date,text,photos").order("date", { ascending: true }).range(from, from + 499));
+      out.push(...rows);
+      if (rows.length < 500) break;
+    }
+    return out.filter((e) => (e.text || "").trim() || (e.photos || []).length);
+  }
+  // Photos go in at up to 1400px so the file stays small enough to email.
+  async function photoForDoc(url) {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("photo " + r.status);
+    const bmp = await createImageBitmap(await r.blob());
+    const sc = Math.min(1, 1400 / Math.max(bmp.width, bmp.height));
+    const w = Math.max(1, Math.round(bmp.width * sc)), h = Math.max(1, Math.round(bmp.height * sc));
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    c.getContext("2d").drawImage(bmp, 0, 0, w, h);
+    if (bmp.close) bmp.close();
+    const out = await new Promise((res) => c.toBlob(res, "image/jpeg", 0.8));
+    return { data: new Uint8Array(await out.arrayBuffer()), w, h };
+  }
+  async function buildExport() {
+    if (built && Date.now() - built.at < 5 * 60 * 1000) return built;
+    if (saveTimer) await saveNow();
+    expNote("Gathering your entries…");
+    const [D, entries] = await Promise.all([loadDocx(), allEntries()]);
+    if (!entries.length) throw new Error("There are no saved entries to export yet.");
+    const allPhotos = entries.flatMap((e) => e.photos || []);
+    const urls = {};
+    for (let i = 0; i < allPhotos.length; i += 100) Object.assign(urls, await Store.urls(allPhotos.slice(i, i + 100).map((p) => p.path)));
+    const children = [];
+    let done = 0, photoCount = 0, missed = 0;
+    for (const e of entries) {
+      children.push(new D.Paragraph({ heading: D.HeadingLevel.HEADING_1, children: [new D.TextRun(longDate(e.date))] }));
+      String(e.text || "").split(/\n/).forEach((line) => {
+        if (line.trim()) children.push(new D.Paragraph({ children: [new D.TextRun(line)] }));
+      });
+      for (const p of e.photos || []) {
+        expNote(`Adding photos… ${++done} of ${allPhotos.length}`);
+        try {
+          if (!urls[p.path]) throw new Error("no link");
+          const img = await photoForDoc(urls[p.path]);
+          const fit = Math.min(1, 600 / img.w, 620 / img.h);      // fit the page: about 6¼ × 6½ inches
+          children.push(new D.Paragraph({ spacing: { before: 120, after: 120, line: 240, lineRule: D.LineRuleType.AUTO }, children: [new D.ImageRun({ type: "jpg", data: img.data, transformation: { width: Math.round(img.w * fit), height: Math.round(img.h * fit) } })] }));
+          photoCount++;
+        } catch (err) { missed++; }
+      }
+    }
+    expNote("Putting the document together…");
+    const doc = new D.Document({
+      creator: "Moon Journal",
+      title: "Moon Journal",
+      styles: {
+        default: { document: { run: { font: "Georgia", size: 24, color: "1A1A1A" }, paragraph: { spacing: { after: 160, line: 300, lineRule: D.LineRuleType.AUTO } } } },
+        paragraphStyles: [{ id: "Heading1", name: "Heading 1", basedOn: "Normal", next: "Normal", quickFormat: true,
+          run: { font: "Georgia", size: 32, bold: true, color: "1A1A1A" }, paragraph: { spacing: { before: 480, after: 160 }, keepNext: true } }],
+      },
+      sections: [{ properties: { page: { margin: { top: 1080, bottom: 1080, left: 1080, right: 1080 } } }, children }],
+    });
+    const blob = await D.Packer.toBlob(doc);
+    const today = keyOf(new Date());
+    built = {
+      blob: new Blob([blob], { type: DOCX_TYPE }),
+      filename: `Moon Journal ${fromKey(today).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}.docx`,
+      path: `${uid}/exports/moon-journal-${today}-${Date.now()}.docx`,
+      days: entries.length, photos: photoCount, missed, at: Date.now(),
+    };
+    return built;
+  }
+  const summary = (b) => `${b.days} day${b.days === 1 ? "" : "s"}${b.photos ? `, ${b.photos} photo${b.photos === 1 ? "" : "s"}` : ""}${b.missed ? ` (${b.missed} photo${b.missed === 1 ? "" : "s"} couldn't be added)` : ""}`;
+  async function sendExport() {
+    const to = $("expEmail").value.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) { expNote("Enter an email address to send it to."); $("expEmail").focus(); return; }
+    try { localStorage.setItem("moon-export-email", to); } catch (e) {}
+    $("expEmail").blur();
+    exportBusy = true; $("expSend").disabled = true; $("expSave").disabled = true;
+    try {
+      const b = await buildExport();
+      expNote("Sending…");
+      // Keep only the newest export in storage; the email links to it for 7 days.
+      try {
+        const old = must(await sb.storage.from("photos").list(`${uid}/exports`));
+        const stale = (old || []).map((f) => `${uid}/exports/${f.name}`).filter((p) => p !== b.path);
+        if (stale.length) await sb.storage.from("photos").remove(stale);
+      } catch (e) { /* not important */ }
+      if (!b.uploaded) {
+        const up = await sb.storage.from("photos").upload(b.path, b.blob, { contentType: DOCX_TYPE, upsert: false });
+        if (up.error) {
+          const m = up.error.message || String(up.error);
+          throw new Error(/mime|type/i.test(m)
+            ? "Storage isn't set up for exports yet: run supabase/export.sql in the Supabase SQL Editor."
+            : "Couldn't upload the document: " + m);
+        }
+        b.uploaded = true;
+      }
+      const { data: { session } } = await sb.auth.getSession();
+      const ctrl = new AbortController();
+      const limit = setTimeout(() => ctrl.abort(), 60000);
+      let r, raw = "", data = null;
+      try {
+        r = await fetch(`${CFG.supabaseUrl}/functions/v1/send-export`, {
+          method: "POST", signal: ctrl.signal,
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${(session && session.access_token) || CFG.functionsKey}`, apikey: CFG.functionsKey },
+          body: JSON.stringify({ to, path: b.path, filename: b.filename, days: b.days, photos: b.photos, attach: b.blob.size < 28 * 1024 * 1024 }),
+        });
+        raw = await r.text();
+        try { data = JSON.parse(raw); } catch (e) { /* not JSON */ }
+      } catch (e) {
+        throw new Error(e && e.name === "AbortError" ? "Sending took too long. Check the send-export logs in Supabase." : "Couldn't reach the email service: " + ((e && e.message) || "network error"));
+      } finally { clearTimeout(limit); }
+      if (!r.ok || (data && data.error)) throw new Error(r.status === 404
+        ? "The send-export function isn't deployed in Supabase yet."
+        : (data && (data.error || data.message || data.msg)) || `Email service error (${r.status}): ${raw.slice(0, 140)}`);
+      expNote(`Sent to ${to}: ${summary(b)}.`);
+      $("expSend").textContent = "Sent";
+    } catch (e) {
+      expNote((e && e.message) || "Something went wrong.");
+    } finally {
+      exportBusy = false; $("expSend").disabled = false; $("expSave").disabled = false;
+    }
+  }
+  // Sharing needs a fresh tap, so the first tap builds the file and the second one shares it.
+  async function saveExport() {
+    if (exportBusy) return;
+    if (built && Date.now() - built.at < 5 * 60 * 1000 && $("expSave").dataset.ready) {
+      const file = new File([built.blob], built.filename, { type: DOCX_TYPE });
+      try {
+        if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file] }); return; }
+      } catch (e) { if (e && e.name === "AbortError") return; }
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(built.blob); a.download = built.filename;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+      return;
+    }
+    exportBusy = true; $("expSend").disabled = true; $("expSave").disabled = true;
+    try {
+      const b = await buildExport();
+      expNote(`Ready: ${summary(b)}.`);
+      $("expSave").dataset.ready = "1";
+      $("expSave").textContent = `Share ${b.filename}`;
+    } catch (e) {
+      expNote((e && e.message) || "Something went wrong.");
+    } finally {
+      exportBusy = false; $("expSend").disabled = false; $("expSave").disabled = false;
+    }
+  }
+  function openExport() {
+    $("calendar").hidden = true;
+    let last = "";
+    try { last = localStorage.getItem("moon-export-email") || ""; } catch (e) {}
+    $("expEmail").value = last || $("acctEmail").textContent.trim();
+    $("expSend").textContent = "Send";
+    $("expSave").textContent = "Save to this phone instead";
+    delete $("expSave").dataset.ready;
+    expNote("");
+    built = null;
+    $("exportSheet").hidden = false;
+  }
+  function closeExport() { if (!exportBusy) { $("expEmail").blur(); $("exportSheet").hidden = true; } }
+  $("exportBtn").addEventListener("click", openExport);
+  $("expClose").addEventListener("click", closeExport);
+  $("exportSheet").addEventListener("click", (e) => { if (e.target === $("exportSheet")) closeExport(); });
+  $("expSend").addEventListener("click", sendExport);
+  $("expEmail").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); sendExport(); } });
+  $("expSave").addEventListener("click", saveExport);
+
   $("remindersBtn").addEventListener("click", async () => {
     $("calendar").hidden = true;
     $("reminders").hidden = false;
@@ -1895,7 +2098,7 @@ body.modal-open::before { background: var(--scrim-on-paper); }
     $("resetForm").hidden = !recover;
     $("loginSub").textContent = recover ? "Choose a new password for your journal." : "Sign in to see tonight's moon and your journal.";
     const now = new Date();
-    if (sb) $("versionTag").textContent = `Version 2026-10-26af · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
+    if (sb) $("versionTag").textContent = `Version 2026-11-25a · ${CFG.supabaseUrl.replace(/^https:\/\//, "").split(".")[0]}`;
     $("loginMoon").innerHTML = phaseIcon(SunCalc.getMoonIllumination(now).phase, 112, 3, "hatch");
   }
   function enterApp(session) {

@@ -77,3 +77,15 @@ One-time setup:
 3. **Edge Functions → Secrets**: add `OPENAI_API_KEY` with your key.
 
 Optional secrets to change models: `TRANSCRIBE_MODEL` (default `gpt-4o-mini-transcribe`) and `CLEANUP_MODEL` (default `gpt-4.1-mini`).
+
+## Export
+
+Calendar → **Export** makes a Word document of every day you've written (oldest first: the date, the entry, then that day's photos) and emails it. It opens in Word, Google Docs and Pages. **Save to this phone instead** skips email and uses the share sheet.
+
+One-time setup for email:
+1. Create a free account at resend.com, then **API Keys → Create API key** and copy it.
+2. **SQL Editor**: run `supabase/export.sql` (lets the app store the document next to your photos).
+3. **Edge Functions → Deploy a new function → Via Editor**: name it `send-export`, paste `supabase/functions/send-export/index.ts`, deploy. Leave **Verify JWT on**.
+4. **Edge Functions → Secrets**: add `RESEND_API_KEY` with your key.
+
+Until you verify a domain in Resend, it only delivers to the email you signed up to Resend with. To send anywhere, verify a domain in Resend and add the secret `EXPORT_FROM`, e.g. `Moon Journal <journal@yourdomain.com>`.
